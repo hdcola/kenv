@@ -33,13 +33,18 @@ mod tests {
     #[test]
     fn capability_does_not_enable_opener_permission() {
         let capabilities_path = project_root().join("capabilities/default.json");
-        let content = fs::read_to_string(&capabilities_path)
-            .unwrap_or_else(|error| panic!("failed to read {}: {error}", capabilities_path.display()));
-        let json: Value = serde_json::from_str(&content)
-            .unwrap_or_else(|error| panic!("failed to parse {}: {error}", capabilities_path.display()));
-        let permissions = json["permissions"]
-            .as_array()
-            .unwrap_or_else(|| panic!("permissions must be an array in {}", capabilities_path.display()));
+        let content = fs::read_to_string(&capabilities_path).unwrap_or_else(|error| {
+            panic!("failed to read {}: {error}", capabilities_path.display())
+        });
+        let json: Value = serde_json::from_str(&content).unwrap_or_else(|error| {
+            panic!("failed to parse {}: {error}", capabilities_path.display())
+        });
+        let permissions = json["permissions"].as_array().unwrap_or_else(|| {
+            panic!(
+                "permissions must be an array in {}",
+                capabilities_path.display()
+            )
+        });
 
         assert!(
             !permissions.iter().any(|item| item == "opener:default"),

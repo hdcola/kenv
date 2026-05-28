@@ -54,6 +54,23 @@ describe("App", () => {
     await flushPromises();
     expect(invokeMock).toHaveBeenCalledTimes(2);
   });
+
+  it("resets the status to unknown when a refresh fails after a successful load", async () => {
+    invokeMock.mockResolvedValueOnce("unlocked").mockRejectedValueOnce(new Error("backend unavailable"));
+    const wrapper = mount(App);
+    await flushPromises();
+
+    expect(wrapper.find(".status-title").text()).toBe("Unlocked");
+    expect(wrapper.find(".status-pill").text()).toBe("unlocked");
+
+    await wrapper.find('button[aria-label="Refresh vault status"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find(".status-title").text()).toBe("Unknown");
+    expect(wrapper.find(".status-pill").text()).toBe("unknown");
+    expect(wrapper.find(".status-pill--unknown").exists()).toBe(true);
+    expect(wrapper.find(".error-text").text()).toContain("backend unavailable");
+  });
 });
 
 async function flushPromises() {
