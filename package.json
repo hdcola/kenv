@@ -1,0 +1,16 @@
+{
+  "name": "kenv",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev:desktop": "pnpm --filter desktop tauri dev",
+    "build:desktop": "pnpm --filter desktop tauri build",
+    "build:frontend": "pnpm --filter desktop build",
+    "test": "cargo test --workspace",
+    "lint": "cargo fmt --all -- --check"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}
