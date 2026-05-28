@@ -2,7 +2,7 @@
 
 `kenv` is a context-aware environment security manager for developers. Its goal is to manage environment variables and SSH keys together in a local encrypted vault, making credential switching across projects, terminals, and tools safer and smoother.
 
-This project is currently in the documentation initialization stage. The repository describes the product direction, MVP scope, and architecture plan; the desktop app and CLI have not been implemented yet.
+This project is currently in the workspace initialization stage. The repository includes the product direction, MVP scope, architecture plan, a shared Rust core, a script-friendly CLI, and a minimal Tauri + Vue desktop shell. Encrypted vault storage and credential workflows have not been implemented yet.
 
 Chinese documentation is available in [README_zh.md](README_zh.md).
 
@@ -70,7 +70,7 @@ See [docs/SECURITY.md](docs/SECURITY.md) for security boundaries.
 
 The current stage does not promise:
 
-- A runnable Tauri desktop application.
+- A production-ready desktop experience beyond the initial runnable shell.
 - Full `ssh-agent` protocol compatibility.
 - Environment variable injection into GUI apps launched from Finder/Spotlight/Dock.
 - iCloud/WebDAV sync implementation.
