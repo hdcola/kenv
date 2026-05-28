@@ -86,6 +86,33 @@ The current stage does not promise:
 - Planned AES-256-GCM encrypted local vault
 - Planned Secure Enclave/Touch ID unlock support on macOS
 
+## Development
+
+The repository is initialized as a split Rust and pnpm workspace:
+
+- `crates/kenv-core`: shared core for vault status, security errors, and future vault logic.
+- `crates/kenv-cli`: terminal entrypoint for script-friendly workflows.
+- `apps/desktop`: Tauri 2 + Vue TypeScript desktop app.
+
+Install dependencies and run the current verification suite:
+
+```sh
+pnpm install
+cargo test --workspace
+```
+
+Useful commands:
+
+```sh
+pnpm dev:desktop
+pnpm build:frontend
+pnpm test
+pnpm lint
+cargo run -p kenv-cli -- status
+```
+
+The initial app intentionally reports `vault_status=missing` until encrypted vault storage is implemented. Do not commit `.env` files or plaintext credential fixtures.
+
 ## License
 
 MIT

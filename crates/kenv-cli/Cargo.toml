@@ -1,0 +1,17 @@
+[package]
+name = "kenv-cli"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "kenv"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+kenv-core = { path = "../kenv-core" }
+
+[dev-dependencies]
+assert_cmd = "2.0.17"
+predicates = "3.1.3"
