@@ -3,14 +3,17 @@ import { computed, onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 
 type VaultStatus = "missing" | "locked" | "unlocked";
+type VaultStatusView = VaultStatus | "unknown";
 
-const vaultStatus = ref<VaultStatus>("missing");
+const vaultStatus = ref<VaultStatusView>("missing");
 const statusError = ref("");
 
 const statusLabel = computed(() => {
   switch (vaultStatus.value) {
     case "locked":
       return "Locked";
+    case "unknown":
+      return "Unknown";
     case "unlocked":
       return "Unlocked";
     default:
@@ -26,6 +29,7 @@ async function refreshVaultStatus() {
   try {
     vaultStatus.value = await invoke<VaultStatus>("get_vault_status");
   } catch (error) {
+    vaultStatus.value = "unknown";
     statusError.value = error instanceof Error ? error.message : String(error);
   }
 }
@@ -284,6 +288,11 @@ onMounted(refreshVaultStatus);
 .status-pill--unlocked {
   color: #236c47;
   background: #dff3df;
+}
+
+.status-pill--unknown {
+  color: #5f4b8b;
+  background: #ece4ff;
 }
 
 .error-text {
