@@ -39,6 +39,63 @@ The first MVP should prove two narrow working loops:
 
 The MVP must include both desktop and CLI entrypoints, but it will not promise a complete `ssh-agent` replacement, GUI app environment injection, cloud sync, team collaboration, or cross-platform releases.
 
+The checklist below tracks implemented repository status today, not just the intended MVP target state.
+
+## MVP Progress Checklist
+
+### Foundation
+
+- [x] Rust workspace is split into shared core, CLI, and desktop app
+- [x] Desktop app and CLI both call the same Rust core crate
+- [x] Basic vault status types and shared error types are defined
+- [x] Minimal tests cover current vault status behavior
+
+### Vault
+
+- [x] Vault status can be reported as `missing`
+- [ ] Local encrypted vault file format is implemented
+- [ ] Vault creation flow is implemented
+- [ ] Vault unlock flow is implemented
+- [ ] Vault lock flow is implemented
+
+### Contexts And Environment Variables
+
+- [ ] Context data model is implemented
+- [ ] Context create/list/detail flows are implemented
+- [ ] Environment variable storage is implemented
+- [ ] Environment variable create/edit/delete flows are implemented
+- [ ] Plaintext values stay memory-only after unlock
+
+### CLI Workflow
+
+- [x] `kenv status` prints a script-friendly vault status
+- [ ] Context listing command is implemented
+- [ ] Context activation command is implemented
+- [ ] Shell-consumable env export output is implemented
+
+### SSH Key Workflow
+
+- [ ] SSH key material records are implemented
+- [ ] SSH key reference records are implemented
+- [ ] SSH key list/status commands are implemented
+- [ ] Local unlock flow for SSH-related usage is implemented
+
+### Desktop App
+
+- [x] Tauri desktop shell is running with shared-core status wiring
+- [x] Vault status is shown in the UI
+- [ ] Vault create/unlock/lock actions are implemented in the UI
+- [ ] Context management UI is implemented
+- [ ] Environment variable management UI is implemented
+- [ ] SSH key management UI is implemented
+- [ ] Security settings and platform capability UI are implemented
+
+### macOS Security Integration
+
+- [ ] Secure Enclave integration is implemented
+- [ ] Touch ID unlock flow is implemented
+- [ ] Apple Security API adapter is implemented
+
 See [docs/MVP.md](docs/MVP.md) for the full scope.
 
 ## Architecture Direction

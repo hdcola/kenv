@@ -37,6 +37,63 @@
 
 MVP 必须包含桌面端和 CLI 两个入口，但不会承诺完整替代 `ssh-agent`、实现 GUI app 环境注入、云同步、团队协作或跨平台发布。
 
+下面的清单用于跟踪仓库当前已经实现的状态，不只是 MVP 目标描述。
+
+## MVP 进度清单
+
+### 基础骨架
+
+- [x] Rust workspace 已拆分为共享 core、CLI 和桌面应用
+- [x] 桌面端和 CLI 都已接入同一个 Rust core crate
+- [x] 已定义基础 vault 状态类型和共享错误类型
+- [x] 已有最小测试覆盖当前 vault 状态行为
+
+### Vault
+
+- [x] 当前可以报告 `missing` 状态的 vault 状态
+- [ ] 本地加密 vault 文件格式已实现
+- [ ] vault 创建流程已实现
+- [ ] vault 解锁流程已实现
+- [ ] vault 锁定流程已实现
+
+### Context 与环境变量
+
+- [ ] context 数据模型已实现
+- [ ] context 创建、列表、详情流程已实现
+- [ ] 环境变量存储已实现
+- [ ] 环境变量新增、编辑、删除流程已实现
+- [ ] 解锁后明文值仅保留在内存中
+
+### CLI 工作流
+
+- [x] `kenv status` 可输出适合脚本消费的 vault 状态
+- [ ] context 列表命令已实现
+- [ ] context 激活命令已实现
+- [ ] shell 可消费的环境变量导出输出已实现
+
+### SSH Key 工作流
+
+- [ ] SSH key material 记录已实现
+- [ ] SSH key reference 记录已实现
+- [ ] SSH key 列表或状态命令已实现
+- [ ] SSH 相关使用时的本地解锁流程已实现
+
+### 桌面端
+
+- [x] Tauri 桌面壳已跑通，并接入共享 core 状态
+- [x] UI 中已展示 vault 状态
+- [ ] UI 中的 vault 创建、解锁、锁定操作已实现
+- [ ] context 管理 UI 已实现
+- [ ] 环境变量管理 UI 已实现
+- [ ] SSH key 管理 UI 已实现
+- [ ] 安全设置和平台能力 UI 已实现
+
+### macOS 安全集成
+
+- [ ] Secure Enclave 集成已实现
+- [ ] Touch ID 解锁流程已实现
+- [ ] Apple Security API adapter 已实现
+
 更多范围说明见 [docs/MVP.md](docs/MVP.md)。
 
 ## 架构方向
