@@ -84,6 +84,33 @@ MVP 必须包含桌面端和 CLI 两个入口，但不会承诺完整替代 `ssh
 - Planned AES-256-GCM encrypted local vault
 - Planned Secure Enclave/Touch ID unlock support on macOS
 
+## 开发
+
+本仓库已初始化为拆分式 Rust 和 pnpm workspace：
+
+- `crates/kenv-core`：共享核心，用于 vault 状态、安全错误和后续 vault 逻辑。
+- `crates/kenv-cli`：面向终端的入口，用于脚本友好的工作流。
+- `apps/desktop`：Tauri 2 + Vue TypeScript 桌面应用。
+
+安装依赖并运行当前验证套件：
+
+```sh
+pnpm install
+cargo test --workspace
+```
+
+常用命令：
+
+```sh
+pnpm dev:desktop
+pnpm build:frontend
+pnpm test
+pnpm lint
+cargo run -p kenv-cli -- status
+```
+
+在加密 vault 存储实现之前，初始应用会有意报告 `vault_status=missing`。不要提交 `.env` 文件或包含明文凭证的测试 fixture。
+
 ## License
 
 MIT
