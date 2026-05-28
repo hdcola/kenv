@@ -42,3 +42,10 @@ pub enum KenvError {
 pub fn get_vault_status() -> Result<VaultStatus, KenvError> {
     Ok(VaultStatus::Missing)
 }
+
+pub fn get_vault_status_with<F>(status_provider: F) -> Result<VaultStatus, KenvError>
+where
+    F: FnOnce() -> Result<VaultStatus, KenvError>,
+{
+    status_provider()
+}
