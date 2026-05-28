@@ -24,3 +24,4 @@ apps/desktop/src-tauri/gen/
 # Logs
 *.log
 /.claude
+CLAUDE.md
