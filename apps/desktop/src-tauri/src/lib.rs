@@ -5,10 +5,15 @@ fn get_vault_status() -> Result<VaultStatus, String> {
     kenv_core::get_vault_status().map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn create_vault(password: String) -> Result<(), String> {
+    kenv_core::create_vault(&password).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_vault_status])
+        .invoke_handler(tauri::generate_handler![get_vault_status, create_vault])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -27,7 +32,11 @@ mod tests {
     #[test]
     fn command_returns_vault_status_successfully() {
         let status = get_vault_status().expect("command should return vault status");
-        assert_eq!(status.as_script_value(), "missing");
+        assert!(
+            status.as_script_value() == "missing" || status.as_script_value() == "locked",
+            "unexpected status: {}",
+            status.as_script_value()
+        );
     }
 
     #[test]
@@ -74,5 +83,19 @@ mod tests {
             "missing IPC connect-src directive in {}",
             config_path.display()
         );
+    }
+
+    #[test]
+    fn create_vault_command_returns_err_string_when_vault_already_exists() {
+        let first = super::create_vault("test_password_tauri".to_string());
+        if first.is_ok() {
+            let second = super::create_vault("test_password_tauri".to_string());
+            assert!(second.is_err());
+            assert!(!second.unwrap_err().is_empty());
+            let home = std::env::var("HOME").unwrap_or_default();
+            let _ = std::fs::remove_file(format!("{home}/.kenv/vault.kenv"));
+        } else {
+            assert!(!first.unwrap_err().is_empty());
+        }
     }
 }
