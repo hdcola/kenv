@@ -1,8 +1,13 @@
 use kenv_core::{get_vault_status, get_vault_status_with, KenvError, VaultStatus};
 
 #[test]
-fn reports_missing_vault_before_storage_is_implemented() {
-    assert_eq!(get_vault_status().unwrap(), VaultStatus::Missing);
+fn returns_missing_or_locked_depending_on_real_filesystem() {
+    let status = get_vault_status().unwrap();
+    assert!(
+        status == VaultStatus::Missing || status == VaultStatus::Locked,
+        "unexpected status: {:?}",
+        status
+    );
 }
 
 #[test]

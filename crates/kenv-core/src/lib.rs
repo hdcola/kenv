@@ -1,7 +1,10 @@
 pub mod crypto;
 pub mod vault;
 
+use crate::crypto::KdfParams;
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use thiserror::Error;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -48,8 +51,42 @@ pub enum KenvError {
     EncryptionError,
 }
 
+pub fn create_vault(password: &str) -> Result<(), KenvError> {
+    let path = vault::vault_path()?;
+    create_vault_at(&path, password, &KdfParams::recommended())
+}
+
+pub fn create_vault_at(
+    path: &Path,
+    password: &str,
+    params: &KdfParams,
+) -> Result<(), KenvError> {
+    if path.exists() {
+        return Err(KenvError::VaultAlreadyExists);
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|_| KenvError::FileOperationFailed)?;
+    }
+    let mut salt = [0u8; 32];
+    let mut nonce = [0u8; 12];
+    rand::thread_rng().fill_bytes(&mut salt);
+    rand::thread_rng().fill_bytes(&mut nonce);
+    let key = crypto::derive_key(password, &salt, params)
+        .map_err(|_| KenvError::EncryptionError)?;
+    let payload = vault::VaultPayload::new();
+    let plaintext = serde_json::to_vec(&payload).map_err(|_| KenvError::FileOperationFailed)?;
+    let ciphertext = crypto::encrypt(&key, &nonce, &plaintext)
+        .map_err(|_| KenvError::EncryptionError)?;
+    vault::write_vault_file(path, &salt, &nonce, &ciphertext, params)
+}
+
 pub fn get_vault_status() -> Result<VaultStatus, KenvError> {
-    Ok(VaultStatus::Missing)
+    let path = vault::vault_path()?;
+    if path.exists() {
+        Ok(VaultStatus::Locked)
+    } else {
+        Ok(VaultStatus::Missing)
+    }
 }
 
 pub fn get_vault_status_with<F>(status_provider: F) -> Result<VaultStatus, KenvError>
