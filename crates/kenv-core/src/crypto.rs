@@ -1,8 +1,8 @@
-use argon2::{Algorithm, Argon2, Params, Version};
 use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Key, Nonce,
 };
+use argon2::{Algorithm, Argon2, Params, Version};
 
 #[derive(Clone, Debug)]
 pub struct KdfParams {
@@ -13,11 +13,19 @@ pub struct KdfParams {
 
 impl KdfParams {
     pub fn for_tests() -> Self {
-        Self { m_cost: 8, t_cost: 1, p_cost: 1 }
+        Self {
+            m_cost: 8,
+            t_cost: 1,
+            p_cost: 1,
+        }
     }
 
     pub fn recommended() -> Self {
-        Self { m_cost: 65536, t_cost: 3, p_cost: 1 }
+        Self {
+            m_cost: 65536,
+            t_cost: 3,
+            p_cost: 1,
+        }
     }
 }
 

@@ -56,11 +56,7 @@ pub fn create_vault(password: &str) -> Result<(), KenvError> {
     create_vault_at(&path, password, &KdfParams::recommended())
 }
 
-pub fn create_vault_at(
-    path: &Path,
-    password: &str,
-    params: &KdfParams,
-) -> Result<(), KenvError> {
+pub fn create_vault_at(path: &Path, password: &str, params: &KdfParams) -> Result<(), KenvError> {
     if path.exists() {
         return Err(KenvError::VaultAlreadyExists);
     }
@@ -71,12 +67,12 @@ pub fn create_vault_at(
     let mut nonce = [0u8; 12];
     rand::thread_rng().fill_bytes(&mut salt);
     rand::thread_rng().fill_bytes(&mut nonce);
-    let key = crypto::derive_key(password, &salt, params)
-        .map_err(|_| KenvError::EncryptionError)?;
+    let key =
+        crypto::derive_key(password, &salt, params).map_err(|_| KenvError::EncryptionError)?;
     let payload = vault::VaultPayload::new();
     let plaintext = serde_json::to_vec(&payload).map_err(|_| KenvError::FileOperationFailed)?;
-    let ciphertext = crypto::encrypt(&key, &nonce, &plaintext)
-        .map_err(|_| KenvError::EncryptionError)?;
+    let ciphertext =
+        crypto::encrypt(&key, &nonce, &plaintext).map_err(|_| KenvError::EncryptionError)?;
     vault::write_vault_file(path, &salt, &nonce, &ciphertext, params)
 }
 

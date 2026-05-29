@@ -1,8 +1,10 @@
-use kenv_core::vault::{validate_vault_header, write_vault_file, MAGIC};
 use kenv_core::crypto::KdfParams;
+use kenv_core::vault::{validate_vault_header, write_vault_file, MAGIC};
 use tempfile::NamedTempFile;
 
-fn p() -> KdfParams { KdfParams::for_tests() }
+fn p() -> KdfParams {
+    KdfParams::for_tests()
+}
 
 #[test]
 fn write_produces_minimum_size_file() {
@@ -36,10 +38,14 @@ fn write_encodes_kdf_id_1_at_offset_5() {
 #[test]
 fn write_encodes_kdf_params_big_endian() {
     let f = NamedTempFile::new().unwrap();
-    let params = KdfParams { m_cost: 0x100, t_cost: 0x2, p_cost: 0x1 };
+    let params = KdfParams {
+        m_cost: 0x100,
+        t_cost: 0x2,
+        p_cost: 0x1,
+    };
     write_vault_file(f.path(), &[0u8; 32], &[0u8; 12], &[0u8; 16], &params).unwrap();
     let b = std::fs::read(f.path()).unwrap();
-    assert_eq!(&b[6..10],  &0x100u32.to_be_bytes());
+    assert_eq!(&b[6..10], &0x100u32.to_be_bytes());
     assert_eq!(&b[10..14], &0x2u32.to_be_bytes());
     assert_eq!(&b[14..18], &0x1u32.to_be_bytes());
 }

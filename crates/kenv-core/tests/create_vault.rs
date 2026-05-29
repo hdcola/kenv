@@ -1,9 +1,11 @@
-use kenv_core::{create_vault_at, KenvError};
 use kenv_core::crypto::KdfParams;
 use kenv_core::vault::{validate_vault_header, CIPHERTEXT_OFFSET, MIN_FILE_SIZE};
+use kenv_core::{create_vault_at, KenvError};
 use tempfile::TempDir;
 
-fn p() -> KdfParams { KdfParams::for_tests() }
+fn p() -> KdfParams {
+    KdfParams::for_tests()
+}
 
 #[test]
 fn creates_a_file() {
