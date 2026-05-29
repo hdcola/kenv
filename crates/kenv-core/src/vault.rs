@@ -6,7 +6,7 @@ pub const MAGIC: &[u8; 4] = b"KENV";
 pub const FILE_VERSION: u8 = 1;
 pub const KDF_ID_ARGON2ID: u8 = 1;
 pub const CIPHERTEXT_OFFSET: usize = 62;
-pub const MIN_FILE_SIZE: usize = 78;
+pub const MIN_FILE_SIZE: usize = 91;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct VaultPayload {
@@ -57,5 +57,26 @@ pub fn validate_vault_header(data: &[u8]) -> Result<(), KenvError> {
     if data[5] != KDF_ID_ARGON2ID {
         return Err(KenvError::InvalidVaultFormat);
     }
+
+    let m_cost = u32::from_be_bytes(
+        data[6..10]
+            .try_into()
+            .map_err(|_| KenvError::InvalidVaultFormat)?,
+    );
+    let t_cost = u32::from_be_bytes(
+        data[10..14]
+            .try_into()
+            .map_err(|_| KenvError::InvalidVaultFormat)?,
+    );
+    let p_cost = u32::from_be_bytes(
+        data[14..18]
+            .try_into()
+            .map_err(|_| KenvError::InvalidVaultFormat)?,
+    );
+
+    if m_cost == 0 || t_cost == 0 || p_cost == 0 {
+        return Err(KenvError::InvalidVaultFormat);
+    }
+
     Ok(())
 }

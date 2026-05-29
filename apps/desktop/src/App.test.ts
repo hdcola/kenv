@@ -19,6 +19,7 @@ describe("App", () => {
       { value: "missing", label: "Missing" },
       { value: "locked", label: "Locked" },
       { value: "unlocked", label: "Unlocked" },
+      { value: "corrupted", label: "Corrupted" },
     ] as const;
 
     for (const state of states) {

@@ -69,7 +69,8 @@ fn write_embeds_nonce_at_offset_50() {
 #[test]
 fn validate_accepts_valid_header() {
     let f = NamedTempFile::new().unwrap();
-    write_vault_file(f.path(), &[0u8; 32], &[0u8; 12], &[0u8; 16], &p()).unwrap();
+    // Write a 29-byte ciphertext (minimum: 13-byte plaintext + 16-byte GCM tag)
+    write_vault_file(f.path(), &[0u8; 32], &[0u8; 12], &[0u8; 29], &p()).unwrap();
     let b = std::fs::read(f.path()).unwrap();
     assert!(validate_vault_header(&b).is_ok());
 }
