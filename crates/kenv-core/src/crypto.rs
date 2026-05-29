@@ -1,4 +1,8 @@
 use argon2::{Algorithm, Argon2, Params, Version};
+use aes_gcm::{
+    aead::{Aead, KeyInit},
+    Aes256Gcm, Key, Nonce,
+};
 
 #[derive(Clone, Debug)]
 pub struct KdfParams {
@@ -28,6 +32,26 @@ pub fn derive_key(
     let mut key = [0u8; 32];
     argon2.hash_password_into(password.as_bytes(), salt, &mut key)?;
     Ok(key)
+}
+
+pub fn encrypt(
+    key: &[u8; 32],
+    nonce: &[u8; 12],
+    plaintext: &[u8],
+) -> Result<Vec<u8>, aes_gcm::Error> {
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
+    let nonce = Nonce::from_slice(nonce);
+    cipher.encrypt(nonce, plaintext)
+}
+
+pub fn decrypt(
+    key: &[u8; 32],
+    nonce: &[u8; 12],
+    ciphertext: &[u8],
+) -> Result<Vec<u8>, aes_gcm::Error> {
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
+    let nonce = Nonce::from_slice(nonce);
+    cipher.decrypt(nonce, ciphertext)
 }
 
 #[cfg(test)]
@@ -64,5 +88,43 @@ mod tests {
         let key1 = derive_key("same_password", &salt1, &KdfParams::for_tests()).unwrap();
         let key2 = derive_key("same_password", &salt2, &KdfParams::for_tests()).unwrap();
         assert_ne!(key1, key2);
+    }
+
+    #[test]
+    fn encrypt_produces_ciphertext_longer_than_plaintext() {
+        let key = [0u8; 32];
+        let nonce = [0u8; 12];
+        let plaintext = b"hello vault";
+        let ciphertext = encrypt(&key, &nonce, plaintext).unwrap();
+        assert_eq!(ciphertext.len(), plaintext.len() + 16);
+    }
+
+    #[test]
+    fn decrypt_reverses_encrypt() {
+        let key = [5u8; 32];
+        let nonce = [6u8; 12];
+        let plaintext = b"round-trip test";
+        let ciphertext = encrypt(&key, &nonce, plaintext).unwrap();
+        let recovered = decrypt(&key, &nonce, &ciphertext).unwrap();
+        assert_eq!(recovered, plaintext);
+    }
+
+    #[test]
+    fn decrypt_rejects_tampered_ciphertext() {
+        let key = [7u8; 32];
+        let nonce = [8u8; 12];
+        let plaintext = b"tamper test";
+        let mut ciphertext = encrypt(&key, &nonce, plaintext).unwrap();
+        ciphertext[0] ^= 0xFF;
+        assert!(decrypt(&key, &nonce, &ciphertext).is_err());
+    }
+
+    #[test]
+    fn decrypt_rejects_wrong_key() {
+        let key1 = [9u8; 32];
+        let key2 = [10u8; 32];
+        let nonce = [11u8; 12];
+        let ciphertext = encrypt(&key1, &nonce, b"secret").unwrap();
+        assert!(decrypt(&key2, &nonce, &ciphertext).is_err());
     }
 }
