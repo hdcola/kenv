@@ -69,3 +69,19 @@ fn two_vaults_with_same_password_differ() {
     create_vault_at(&p2, "same_password", &p()).unwrap();
     assert_ne!(std::fs::read(&p1).unwrap(), std::fs::read(&p2).unwrap());
 }
+
+#[test]
+fn rejects_empty_password() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("vault.kenv");
+    let result = create_vault_at(&path, "", &p());
+    assert!(matches!(result, Err(KenvError::WeakPassword)));
+}
+
+#[test]
+fn rejects_whitespace_only_password() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("vault.kenv");
+    let result = create_vault_at(&path, "   ", &p());
+    assert!(matches!(result, Err(KenvError::WeakPassword)));
+}

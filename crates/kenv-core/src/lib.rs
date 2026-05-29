@@ -13,6 +13,7 @@ pub enum VaultStatus {
     Missing,
     Locked,
     Unlocked,
+    Corrupted,
 }
 
 impl VaultStatus {
@@ -21,6 +22,7 @@ impl VaultStatus {
             Self::Missing => "missing",
             Self::Locked => "locked",
             Self::Unlocked => "unlocked",
+            Self::Corrupted => "corrupted",
         }
     }
 }
@@ -49,6 +51,8 @@ pub enum KenvError {
     InvalidVaultFormat,
     #[error("encryption or decryption failed")]
     EncryptionError,
+    #[error("password must not be empty")]
+    WeakPassword,
 }
 
 pub fn create_vault(password: &str) -> Result<(), KenvError> {
@@ -57,6 +61,9 @@ pub fn create_vault(password: &str) -> Result<(), KenvError> {
 }
 
 pub fn create_vault_at(path: &Path, password: &str, params: &KdfParams) -> Result<(), KenvError> {
+    if password.trim().is_empty() {
+        return Err(KenvError::WeakPassword);
+    }
     if path.exists() {
         return Err(KenvError::VaultAlreadyExists);
     }
@@ -78,10 +85,13 @@ pub fn create_vault_at(path: &Path, password: &str, params: &KdfParams) -> Resul
 
 pub fn get_vault_status() -> Result<VaultStatus, KenvError> {
     let path = vault::vault_path()?;
-    if path.exists() {
-        Ok(VaultStatus::Locked)
-    } else {
-        Ok(VaultStatus::Missing)
+    if !path.exists() {
+        return Ok(VaultStatus::Missing);
+    }
+    let data = std::fs::read(&path).map_err(|_| KenvError::FileOperationFailed)?;
+    match vault::validate_vault_header(&data) {
+        Ok(()) => Ok(VaultStatus::Locked),
+        Err(_) => Ok(VaultStatus::Corrupted),
     }
 }
 

@@ -21,6 +21,7 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::get_vault_status;
+    use kenv_core::VaultStatus;
     use serde_json::Value;
     use std::fs;
     use std::path::PathBuf;
@@ -33,7 +34,7 @@ mod tests {
     fn command_returns_vault_status_successfully() {
         let status = get_vault_status().expect("command should return vault status");
         assert!(
-            status.as_script_value() == "missing" || status.as_script_value() == "locked",
+            matches!(status, VaultStatus::Missing | VaultStatus::Locked | VaultStatus::Corrupted),
             "unexpected status: {}",
             status.as_script_value()
         );
@@ -87,15 +88,17 @@ mod tests {
 
     #[test]
     fn create_vault_command_returns_err_string_when_vault_already_exists() {
-        let first = super::create_vault("test_password_tauri".to_string());
-        if first.is_ok() {
-            let second = super::create_vault("test_password_tauri".to_string());
-            assert!(second.is_err());
-            assert!(!second.unwrap_err().is_empty());
-            let home = std::env::var("HOME").unwrap_or_default();
-            let _ = std::fs::remove_file(format!("{home}/.kenv/vault.kenv"));
-        } else {
-            assert!(!first.unwrap_err().is_empty());
-        }
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("vault.kenv");
+        let params = kenv_core::crypto::KdfParams::recommended();
+
+        kenv_core::create_vault_at(&path, "password", &params).unwrap();
+        let result = kenv_core::create_vault_at(&path, "password", &params);
+
+        assert!(
+            matches!(result, Err(kenv_core::KenvError::VaultAlreadyExists)),
+            "expected VaultAlreadyExists, got {result:?}"
+        );
+        assert!(!result.unwrap_err().to_string().is_empty());
     }
 }

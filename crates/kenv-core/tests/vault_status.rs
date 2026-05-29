@@ -1,10 +1,11 @@
 use kenv_core::{get_vault_status, get_vault_status_with, KenvError, VaultStatus};
+use tempfile::TempDir;
 
 #[test]
 fn returns_missing_or_locked_depending_on_real_filesystem() {
     let status = get_vault_status().unwrap();
     assert!(
-        status == VaultStatus::Missing || status == VaultStatus::Locked,
+        status == VaultStatus::Missing || status == VaultStatus::Locked || status == VaultStatus::Corrupted,
         "unexpected status: {:?}",
         status
     );
@@ -20,4 +21,21 @@ fn supports_injected_status_provider_for_tests() {
 fn returns_injected_error_for_tests() {
     let error = get_vault_status_with(|| Err(KenvError::UnlockFailed)).unwrap_err();
     assert_eq!(error.to_string(), "unlock failed");
+}
+
+#[test]
+fn returns_corrupted_when_vault_file_has_invalid_content() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("vault.kenv");
+    std::fs::write(&path, b"garbage").unwrap();
+
+    let status = get_vault_status_with(|| {
+        let data = std::fs::read(&path).map_err(|_| KenvError::FileOperationFailed)?;
+        match kenv_core::vault::validate_vault_header(&data) {
+            Ok(()) => Ok(VaultStatus::Locked),
+            Err(_) => Ok(VaultStatus::Corrupted),
+        }
+    }).unwrap();
+
+    assert_eq!(status, VaultStatus::Corrupted);
 }
