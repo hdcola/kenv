@@ -1,4 +1,5 @@
 pub mod crypto;
+pub mod vault;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -39,6 +40,12 @@ pub enum KenvError {
     PlatformCapabilityUnavailable,
     #[error("file operation failed")]
     FileOperationFailed,
+    #[error("vault already exists")]
+    VaultAlreadyExists,
+    #[error("vault file has an invalid format")]
+    InvalidVaultFormat,
+    #[error("encryption or decryption failed")]
+    EncryptionError,
 }
 
 pub fn get_vault_status() -> Result<VaultStatus, KenvError> {
