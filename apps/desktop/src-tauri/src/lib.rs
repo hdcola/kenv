@@ -1,4 +1,5 @@
 use kenv_core::VaultStatus;
+use zeroize::Zeroize;
 
 #[tauri::command]
 fn get_vault_status() -> Result<VaultStatus, String> {
@@ -6,8 +7,10 @@ fn get_vault_status() -> Result<VaultStatus, String> {
 }
 
 #[tauri::command]
-fn create_vault(password: String) -> Result<(), String> {
-    kenv_core::create_vault(&password).map_err(|e| e.to_string())
+fn create_vault(mut password: String) -> Result<(), String> {
+    let result = kenv_core::create_vault(&password).map_err(|e| e.to_string());
+    password.zeroize();
+    result
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

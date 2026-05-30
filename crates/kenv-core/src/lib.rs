@@ -6,6 +6,7 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use thiserror::Error;
+use zeroize::Zeroize;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -71,13 +72,18 @@ pub fn create_vault_at(path: &Path, password: &str, params: &KdfParams) -> Resul
     let mut nonce = [0u8; 12];
     rand::thread_rng().fill_bytes(&mut salt);
     rand::thread_rng().fill_bytes(&mut nonce);
-    let key =
+    let mut key =
         crypto::derive_key(password, &salt, params).map_err(|_| KenvError::EncryptionError)?;
     let payload = vault::VaultPayload::new();
-    let plaintext = serde_json::to_vec(&payload).map_err(|_| KenvError::FileOperationFailed)?;
+    let plaintext = {
+        let data = serde_json::to_vec(&payload).map_err(|_| KenvError::FileOperationFailed)?;
+        zeroize::Zeroizing::new(data)
+    };
     let ciphertext =
         crypto::encrypt(&key, &nonce, &plaintext).map_err(|_| KenvError::EncryptionError)?;
-    vault::write_vault_file(path, &salt, &nonce, &ciphertext, params)
+    let result = vault::write_vault_file(path, &salt, &nonce, &ciphertext, params);
+    key.zeroize();
+    result
 }
 
 pub fn get_vault_status() -> Result<VaultStatus, KenvError> {
