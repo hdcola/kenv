@@ -22,6 +22,7 @@ export const zhCN = {
     unlocked: "已解锁",
     unknown: "未知",
     corrupted: "已损坏",
+    locked_description: "已加密，完整性将在解锁时验证。",
     copy: "共享的 Rust 核心已经接通。保险库创建和加密存储仍按 MVP 安全边界暂缓开放。",
   },
   panels: {

@@ -124,10 +124,10 @@ fn returns_corrupted_when_nonce_is_all_zeros() {
 
 #[test]
 fn returns_locked_when_header_valid_and_ciphertext_is_garbage() {
-    // This test documents the intentional limitation: AEAD tag verification
-    // happens at unlock time, not at status check time. A file with valid
-    // header and valid salt/nonce but bitflipped or garbage ciphertext will
-    // still return Locked from get_vault_status(). Only unlock will catch it.
+    // Documents the intentional limitation: AEAD tag verification happens at
+    // unlock time, not at status check time. When unlock() is implemented, it
+    // must map aes_gcm::Error (authentication tag mismatch) to a distinct
+    // error from "wrong password" so the frontend can surface it as Corrupted.
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("vault.kenv");
 

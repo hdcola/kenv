@@ -87,6 +87,9 @@ pub fn get_vault_status() -> Result<VaultStatus, KenvError> {
     }
     let data = std::fs::read(&path).map_err(|_| KenvError::FileOperationFailed)?;
     match vault::validate_vault_header(&data) {
+        // Header is structurally valid. Ciphertext integrity cannot be verified
+        // without the decryption key; that check belongs in unlock(). A vault with
+        // corrupted ciphertext will return Locked here and only fail at unlock time.
         Ok(()) => Ok(VaultStatus::Locked),
         Err(_) => Ok(VaultStatus::Corrupted),
     }

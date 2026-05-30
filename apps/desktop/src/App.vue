@@ -17,6 +17,12 @@ const statusTone = computed(() => `status-pill status-pill--${vaultStatus.value}
 const statusError = computed(() =>
   rawStatusError.value ? t("errors.refreshFailed", { message: rawStatusError.value }) : "",
 );
+const statusDescription = computed(() => {
+  if (vaultStatus.value === "locked") {
+    return t("status.locked_description");
+  }
+  return t("status.copy");
+});
 
 function updateLocale(nextLocale: SupportedLocale) {
   locale.value = nextLocale;
@@ -83,7 +89,7 @@ onMounted(refreshVaultStatus);
         <div>
           <p class="eyebrow">{{ t("status.eyebrow") }}</p>
           <p class="status-title">{{ statusLabel }}</p>
-          <p class="status-copy">{{ t("status.copy") }}</p>
+          <p class="status-copy">{{ statusDescription }}</p>
           <p v-if="statusError" class="error-text">{{ statusError }}</p>
         </div>
         <span :class="statusTone">{{ statusLabel }}</span>

@@ -22,6 +22,7 @@ export const en = {
     unlocked: "Unlocked",
     unknown: "Unknown",
     corrupted: "Corrupted",
+    locked_description: "Encrypted. Full integrity verified on unlock.",
     copy:
       "The shared Rust core is connected. Vault creation and encrypted storage are intentionally still waiting behind the MVP security boundary.",
   },

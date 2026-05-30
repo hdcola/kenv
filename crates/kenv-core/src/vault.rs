@@ -68,8 +68,10 @@ pub fn write_vault_file(
             KenvError::FileOperationFailed
         }
     })?;
-    file.write_all(&buf)
-        .map_err(|_| KenvError::FileOperationFailed)
+    file.write_all(&buf).map_err(|_| {
+        let _ = std::fs::remove_file(path);
+        KenvError::FileOperationFailed
+    })
 }
 
 pub fn validate_vault_header(data: &[u8]) -> Result<(), KenvError> {
