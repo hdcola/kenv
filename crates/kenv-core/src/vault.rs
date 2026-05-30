@@ -1,6 +1,11 @@
 use crate::{crypto::KdfParams, KenvError};
 use serde::{Deserialize, Serialize};
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::Path;
+
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 
 pub const MAGIC: &[u8; 4] = b"KENV";
 pub const FILE_VERSION: u8 = 1;
@@ -45,7 +50,27 @@ pub fn write_vault_file(
     buf.extend_from_slice(salt);
     buf.extend_from_slice(nonce);
     buf.extend_from_slice(ciphertext);
-    std::fs::write(path, &buf).map_err(|_| KenvError::FileOperationFailed)
+    #[cfg(unix)]
+    {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(path)
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::AlreadyExists {
+                    KenvError::VaultAlreadyExists
+                } else {
+                    KenvError::FileOperationFailed
+                }
+            })?;
+        file.write_all(&buf)
+            .map_err(|_| KenvError::FileOperationFailed)
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::write(path, &buf).map_err(|_| KenvError::FileOperationFailed)
+    }
 }
 
 pub fn validate_vault_header(data: &[u8]) -> Result<(), KenvError> {

@@ -9,42 +9,52 @@ fn p() -> KdfParams {
 #[test]
 fn write_produces_minimum_size_file() {
     let f = NamedTempFile::new().unwrap();
-    write_vault_file(f.path(), &[0u8; 32], &[0u8; 12], &[0u8; 16], &p()).unwrap();
-    assert_eq!(std::fs::read(f.path()).unwrap().len(), 62 + 16);
+    let path = f.path().to_path_buf();
+    drop(f);
+    write_vault_file(&path, &[0u8; 32], &[0u8; 12], &[0u8; 16], &p()).unwrap();
+    assert_eq!(std::fs::read(&path).unwrap().len(), 62 + 16);
 }
 
 #[test]
 fn write_starts_with_magic() {
     let f = NamedTempFile::new().unwrap();
-    write_vault_file(f.path(), &[0u8; 32], &[0u8; 12], &[0u8; 16], &p()).unwrap();
-    let b = std::fs::read(f.path()).unwrap();
+    let path = f.path().to_path_buf();
+    drop(f);
+    write_vault_file(&path, &[0u8; 32], &[0u8; 12], &[0u8; 16], &p()).unwrap();
+    let b = std::fs::read(&path).unwrap();
     assert_eq!(&b[0..4], MAGIC);
 }
 
 #[test]
 fn write_encodes_file_version_1_at_offset_4() {
     let f = NamedTempFile::new().unwrap();
-    write_vault_file(f.path(), &[0u8; 32], &[0u8; 12], &[0u8; 16], &p()).unwrap();
-    assert_eq!(std::fs::read(f.path()).unwrap()[4], 1u8);
+    let path = f.path().to_path_buf();
+    drop(f);
+    write_vault_file(&path, &[0u8; 32], &[0u8; 12], &[0u8; 16], &p()).unwrap();
+    assert_eq!(std::fs::read(&path).unwrap()[4], 1u8);
 }
 
 #[test]
 fn write_encodes_kdf_id_1_at_offset_5() {
     let f = NamedTempFile::new().unwrap();
-    write_vault_file(f.path(), &[0u8; 32], &[0u8; 12], &[0u8; 16], &p()).unwrap();
-    assert_eq!(std::fs::read(f.path()).unwrap()[5], 1u8);
+    let path = f.path().to_path_buf();
+    drop(f);
+    write_vault_file(&path, &[0u8; 32], &[0u8; 12], &[0u8; 16], &p()).unwrap();
+    assert_eq!(std::fs::read(&path).unwrap()[5], 1u8);
 }
 
 #[test]
 fn write_encodes_kdf_params_big_endian() {
     let f = NamedTempFile::new().unwrap();
+    let path = f.path().to_path_buf();
+    drop(f);
     let params = KdfParams {
         m_cost: 0x100,
         t_cost: 0x2,
         p_cost: 0x1,
     };
-    write_vault_file(f.path(), &[0u8; 32], &[0u8; 12], &[0u8; 16], &params).unwrap();
-    let b = std::fs::read(f.path()).unwrap();
+    write_vault_file(&path, &[0u8; 32], &[0u8; 12], &[0u8; 16], &params).unwrap();
+    let b = std::fs::read(&path).unwrap();
     assert_eq!(&b[6..10], &0x100u32.to_be_bytes());
     assert_eq!(&b[10..14], &0x2u32.to_be_bytes());
     assert_eq!(&b[14..18], &0x1u32.to_be_bytes());
@@ -53,29 +63,35 @@ fn write_encodes_kdf_params_big_endian() {
 #[test]
 fn write_embeds_salt_at_offset_18() {
     let f = NamedTempFile::new().unwrap();
-    write_vault_file(f.path(), &[42u8; 32], &[0u8; 12], &[0u8; 16], &p()).unwrap();
-    let b = std::fs::read(f.path()).unwrap();
+    let path = f.path().to_path_buf();
+    drop(f);
+    write_vault_file(&path, &[42u8; 32], &[0u8; 12], &[0u8; 16], &p()).unwrap();
+    let b = std::fs::read(&path).unwrap();
     assert_eq!(&b[18..50], &[42u8; 32]);
 }
 
 #[test]
 fn write_embeds_nonce_at_offset_50() {
     let f = NamedTempFile::new().unwrap();
-    write_vault_file(f.path(), &[0u8; 32], &[99u8; 12], &[0u8; 16], &p()).unwrap();
-    let b = std::fs::read(f.path()).unwrap();
+    let path = f.path().to_path_buf();
+    drop(f);
+    write_vault_file(&path, &[0u8; 32], &[99u8; 12], &[0u8; 16], &p()).unwrap();
+    let b = std::fs::read(&path).unwrap();
     assert_eq!(&b[50..62], &[99u8; 12]);
 }
 
 #[test]
 fn validate_accepts_valid_header() {
     let f = NamedTempFile::new().unwrap();
+    let path = f.path().to_path_buf();
+    drop(f);
     // Write a 29-byte ciphertext (minimum: 13-byte plaintext + 16-byte GCM tag)
     let mut salt = [0u8; 32];
     let mut nonce = [0u8; 12];
     salt[0] = 1;
     nonce[0] = 1;
-    write_vault_file(f.path(), &salt, &nonce, &[0u8; 29], &p()).unwrap();
-    let b = std::fs::read(f.path()).unwrap();
+    write_vault_file(&path, &salt, &nonce, &[0u8; 29], &p()).unwrap();
+    let b = std::fs::read(&path).unwrap();
     assert!(validate_vault_header(&b).is_ok());
 }
 

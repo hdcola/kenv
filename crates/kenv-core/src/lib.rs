@@ -64,9 +64,6 @@ pub fn create_vault_at(path: &Path, password: &str, params: &KdfParams) -> Resul
     if password.trim().is_empty() {
         return Err(KenvError::WeakPassword);
     }
-    if path.exists() {
-        return Err(KenvError::VaultAlreadyExists);
-    }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|_| KenvError::FileOperationFailed)?;
     }

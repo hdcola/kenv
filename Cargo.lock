@@ -1887,6 +1887,7 @@ dependencies = [
  "clap",
  "kenv-core",
  "predicates",
+ "tempfile",
 ]
 
 [[package]]

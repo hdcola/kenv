@@ -76,7 +76,7 @@ describe("App", () => {
       await flushPromises();
 
       expect(englishWrapper.find(".status-title").text()).toBe(state.en);
-      expect(englishWrapper.find(".status-pill").text()).toBe(state.value);
+      expect(englishWrapper.find(".status-pill").text()).toBe(state.en);
       englishWrapper.unmount();
 
       invokeMock.mockResolvedValueOnce(state.value);
@@ -84,7 +84,7 @@ describe("App", () => {
       await flushPromises();
 
       expect(chineseWrapper.find(".status-title").text()).toBe(state.zh);
-      expect(chineseWrapper.find(".status-pill").text()).toBe(state.value);
+      expect(chineseWrapper.find(".status-pill").text()).toBe(state.zh);
       chineseWrapper.unmount();
 
       invokeMock.mockReset();
@@ -113,13 +113,13 @@ describe("App", () => {
     await flushPromises();
 
     expect(wrapper.find(".status-title").text()).toBe("Unlocked");
-    expect(wrapper.find(".status-pill").text()).toBe("unlocked");
+    expect(wrapper.find(".status-pill").text()).toBe("Unlocked");
 
     await wrapper.find('button[aria-label="Refresh vault status"]').trigger("click");
     await flushPromises();
 
     expect(wrapper.find(".status-title").text()).toBe("Unknown");
-    expect(wrapper.find(".status-pill").text()).toBe("unknown");
+    expect(wrapper.find(".status-pill").text()).toBe("Unknown");
     expect(wrapper.find(".status-pill--unknown").exists()).toBe(true);
     expect(wrapper.find(".error-text").text()).toContain("Unable to refresh vault status: backend unavailable");
   });

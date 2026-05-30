@@ -86,7 +86,7 @@ onMounted(refreshVaultStatus);
           <p class="status-copy">{{ t("status.copy") }}</p>
           <p v-if="statusError" class="error-text">{{ statusError }}</p>
         </div>
-        <span :class="statusTone">{{ vaultStatus }}</span>
+        <span :class="statusTone">{{ statusLabel }}</span>
       </section>
 
       <section class="grid">
