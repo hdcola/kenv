@@ -5,6 +5,10 @@ use std::path::Path;
 pub const MAGIC: &[u8; 4] = b"KENV";
 pub const FILE_VERSION: u8 = 1;
 pub const KDF_ID_ARGON2ID: u8 = 1;
+pub const SALT_OFFSET: usize = 18;
+pub const SALT_SIZE: usize = 32;
+pub const NONCE_OFFSET: usize = 50;
+pub const NONCE_SIZE: usize = 12;
 pub const CIPHERTEXT_OFFSET: usize = 62;
 pub const MIN_FILE_SIZE: usize = 91;
 
@@ -75,6 +79,16 @@ pub fn validate_vault_header(data: &[u8]) -> Result<(), KenvError> {
     );
 
     if m_cost == 0 || t_cost == 0 || p_cost == 0 {
+        return Err(KenvError::InvalidVaultFormat);
+    }
+
+    let salt = &data[SALT_OFFSET..SALT_OFFSET + SALT_SIZE];
+    if salt.iter().all(|&b| b == 0) {
+        return Err(KenvError::InvalidVaultFormat);
+    }
+
+    let nonce = &data[NONCE_OFFSET..NONCE_OFFSET + NONCE_SIZE];
+    if nonce.iter().all(|&b| b == 0) {
         return Err(KenvError::InvalidVaultFormat);
     }
 
