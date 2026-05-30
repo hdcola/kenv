@@ -51,26 +51,25 @@ pub fn write_vault_file(
     buf.extend_from_slice(nonce);
     buf.extend_from_slice(ciphertext);
     #[cfg(unix)]
-    {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(path)
-            .map_err(|e| {
-                if e.kind() == std::io::ErrorKind::AlreadyExists {
-                    KenvError::VaultAlreadyExists
-                } else {
-                    KenvError::FileOperationFailed
-                }
-            })?;
-        file.write_all(&buf)
-            .map_err(|_| KenvError::FileOperationFailed)
-    }
+    let open_result = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path);
     #[cfg(not(unix))]
-    {
-        std::fs::write(path, &buf).map_err(|_| KenvError::FileOperationFailed)
-    }
+    let open_result = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path);
+    let mut file = open_result.map_err(|e| {
+        if e.kind() == std::io::ErrorKind::AlreadyExists {
+            KenvError::VaultAlreadyExists
+        } else {
+            KenvError::FileOperationFailed
+        }
+    })?;
+    file.write_all(&buf)
+        .map_err(|_| KenvError::FileOperationFailed)
 }
 
 pub fn validate_vault_header(data: &[u8]) -> Result<(), KenvError> {

@@ -9,7 +9,7 @@ This repository uses a split workspace:
 ## Prerequisites
 
 - Rust and Cargo.
-- Node.js.
+- Node.js >= 22.
 - pnpm.
 - Xcode Command Line Tools on macOS.
 
