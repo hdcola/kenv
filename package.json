@@ -14,6 +14,7 @@
     "lint": "cargo fmt --all -- --check"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@tauri-apps/cli": "^2"
   }
 }

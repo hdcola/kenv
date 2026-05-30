@@ -50,4 +50,19 @@ export const zhCN = {
   errors: {
     refreshFailed: "无法刷新保险库状态：{message}",
   },
+  create: {
+    eyebrow: "创建保险库",
+    title: "保护您的环境",
+    description: "设置主密码以创建加密保险库。",
+    passwordLabel: "主密码",
+    confirmLabel: "确认密码",
+    submit: "创建保险库",
+    creating: "创建中…",
+    errors: {
+      mismatch: "密码不匹配",
+      weak: "密码不能为空",
+      alreadyExists: "保险库已存在",
+      unknown: "创建保险库失败",
+    },
+  },
 } as const;

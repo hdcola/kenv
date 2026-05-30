@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useI18n } from "vue-i18n";
 import { persistLocale, SUPPORTED_LOCALES, type SupportedLocale } from "./i18n";
+import VaultCreateForm from "./VaultCreateForm.vue";
 
 type VaultStatus = "missing" | "locked" | "unlocked" | "corrupted";
 type VaultStatusView = VaultStatus | "unknown";
@@ -85,15 +86,21 @@ onMounted(refreshVaultStatus);
         </div>
       </header>
 
-      <section id="vault" class="status-band">
-        <div>
-          <p class="eyebrow">{{ t("status.eyebrow") }}</p>
-          <p class="status-title">{{ statusLabel }}</p>
-          <p class="status-copy">{{ statusDescription }}</p>
-          <p v-if="statusError" class="error-text">{{ statusError }}</p>
-        </div>
-        <span :class="statusTone">{{ statusLabel }}</span>
-      </section>
+      <VaultCreateForm
+        v-if="vaultStatus === 'missing'"
+        @vault-created="refreshVaultStatus"
+      />
+      <template v-else>
+        <section id="vault" class="status-band">
+          <div>
+            <p class="eyebrow">{{ t("status.eyebrow") }}</p>
+            <p class="status-title">{{ statusLabel }}</p>
+            <p class="status-copy">{{ statusDescription }}</p>
+            <p v-if="statusError" class="error-text">{{ statusError }}</p>
+          </div>
+          <span :class="statusTone">{{ statusLabel }}</span>
+        </section>
+      </template>
 
       <section class="grid">
         <article id="contexts" class="panel">

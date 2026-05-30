@@ -51,4 +51,19 @@ export const en = {
   errors: {
     refreshFailed: "Unable to refresh vault status: {message}",
   },
+  create: {
+    eyebrow: "Create Vault",
+    title: "Secure Your Environment",
+    description: "Set a master password to create your encrypted vault.",
+    passwordLabel: "Master Password",
+    confirmLabel: "Confirm Password",
+    submit: "Create Vault",
+    creating: "Creating…",
+    errors: {
+      mismatch: "Passwords do not match",
+      weak: "Password cannot be empty",
+      alreadyExists: "A vault already exists",
+      unknown: "Failed to create vault",
+    },
+  },
 } as const;

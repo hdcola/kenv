@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
-use kenv_core::{get_vault_status, KenvError, VaultStatus};
+use kenv_core::{create_vault, get_vault_status, KenvError, VaultStatus};
+use zeroize::Zeroize;
 
 #[derive(Debug, Parser)]
 #[command(name = "kenv")]
@@ -13,6 +14,8 @@ struct Cli {
 enum Commands {
     /// Print the current vault status in a script-friendly format.
     Status,
+    /// Create a new encrypted vault with a master password.
+    Create,
 }
 
 fn main() {
@@ -20,6 +23,7 @@ fn main() {
 
     let result = match cli.command {
         Commands::Status => print_status(),
+        Commands::Create => create_new_vault(),
     };
 
     if let Err(error) = result {
@@ -31,6 +35,25 @@ fn main() {
 fn print_status() -> Result<(), Box<dyn std::error::Error>> {
     let output = render_status(get_vault_status)?;
     println!("{output}");
+    Ok(())
+}
+
+fn create_new_vault() -> Result<(), Box<dyn std::error::Error>> {
+    let mut password = rpassword::prompt_password("Enter master password: ")?;
+    let mut confirm = rpassword::prompt_password("Confirm master password: ")?;
+
+    if password != confirm {
+        password.zeroize();
+        confirm.zeroize();
+        return Err("passwords do not match".into());
+    }
+
+    let result = create_vault(&password);
+    password.zeroize();
+    confirm.zeroize();
+
+    result?;
+    println!("vault_status=created");
     Ok(())
 }
 
