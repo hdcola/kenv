@@ -90,7 +90,7 @@ mod tests {
     }
 
     #[test]
-    fn create_vault_command_returns_err_string_when_vault_already_exists() {
+    fn core_create_vault_at_errors_on_duplicate() {
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("vault.kenv");
         let params = kenv_core::crypto::KdfParams::recommended();

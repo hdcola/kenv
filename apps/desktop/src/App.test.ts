@@ -64,7 +64,6 @@ describe("App", () => {
 
   it("renders localized vault status labels for each state in both locales", async () => {
     const states = [
-      { value: "missing", en: "Missing", zh: "缺失" },
       { value: "locked", en: "Locked", zh: "已锁定" },
       { value: "unlocked", en: "Unlocked", zh: "已解锁" },
       { value: "corrupted", en: "Corrupted", zh: "已损坏" },
@@ -89,6 +88,15 @@ describe("App", () => {
 
       invokeMock.mockReset();
     }
+  });
+
+  it("renders VaultCreateForm when vault is missing", async () => {
+    invokeMock.mockResolvedValueOnce("missing");
+    const wrapper = mountApp();
+    await flushPromises();
+
+    expect(wrapper.find(".create-title").exists()).toBe(true);
+    expect(wrapper.find(".status-title").exists()).toBe(false);
   });
 
   it("localizes the refresh button aria-label", async () => {
