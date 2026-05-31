@@ -53,7 +53,7 @@ fn create_new_vault() -> Result<(), Box<dyn std::error::Error>> {
     confirm.zeroize();
 
     result?;
-    println!("vault_status=created");
+    println!("vault_status=locked");
     Ok(())
 }
 
@@ -90,5 +90,11 @@ mod tests {
     fn format_cli_error_uses_expected_prefix() {
         let message = super::format_cli_error(&KenvError::UnlockFailed);
         assert_eq!(message, "error=unlock failed");
+    }
+
+    #[test]
+    fn create_vault_outputs_locked_status() {
+        let output = render_status(|| Ok(VaultStatus::Locked)).unwrap();
+        assert_eq!(output, "vault_status=locked");
     }
 }

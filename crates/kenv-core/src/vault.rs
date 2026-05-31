@@ -57,10 +57,7 @@ pub fn write_vault_file(
         .mode(0o600)
         .open(path);
     #[cfg(not(unix))]
-    let open_result = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path);
+    compile_error!("vault file creation without 0o600-equivalent permissions is not supported on this platform");
     let mut file = open_result.map_err(|e| {
         if e.kind() == std::io::ErrorKind::AlreadyExists {
             KenvError::VaultAlreadyExists
@@ -69,6 +66,10 @@ pub fn write_vault_file(
         }
     })?;
     file.write_all(&buf).map_err(|_| {
+        let _ = std::fs::remove_file(path);
+        KenvError::FileOperationFailed
+    })?;
+    file.sync_all().map_err(|_| {
         let _ = std::fs::remove_file(path);
         KenvError::FileOperationFailed
     })
