@@ -11,6 +11,7 @@ const error = ref<string | null>(null);
 const { t } = useI18n();
 
 const canSubmit = computed(() => password.value.length > 0 && password.value === confirm.value);
+const errorMessage = computed(() => (error.value ? t(error.value) : null));
 
 const emit = defineEmits<{
   "vault-created": [];
@@ -35,13 +36,13 @@ async function handleSubmit() {
 }
 
 function mapErrorToI18nKey(errorMessage: string): string {
-  if (errorMessage.includes("vault already exists")) {
-    return t("create.errors.alreadyExists");
-  }
-  if (errorMessage.includes("password must not be empty") || errorMessage.includes("too weak")) {
-    return t("create.errors.weak");
-  }
-  return t("create.errors.unknown");
+  if (errorMessage.includes("vault already exists")) return "create.errors.alreadyExists";
+  if (
+    errorMessage.includes("password must not be empty") ||
+    errorMessage.includes("too weak")
+  )
+    return "create.errors.weak";
+  return "create.errors.unknown";
 }
 </script>
 
@@ -77,7 +78,7 @@ function mapErrorToI18nKey(errorMessage: string): string {
           />
         </div>
 
-        <p v-if="error" class="error-text">{{ error }}</p>
+        <p v-if="errorMessage" class="error-text">{{ errorMessage }}</p>
 
         <button type="submit" class="btn-primary" :disabled="!canSubmit || loading">
           {{ loading ? t("create.creating") : t("create.submit") }}
