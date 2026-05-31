@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use kenv_core::{create_vault, get_vault_status, KenvError, VaultStatus};
-use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
 #[derive(Debug, Parser)]
 #[command(name = "kenv")]
@@ -39,20 +39,14 @@ fn print_status() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn create_new_vault() -> Result<(), Box<dyn std::error::Error>> {
-    let mut password = rpassword::prompt_password("Enter master password: ")?;
-    let mut confirm = rpassword::prompt_password("Confirm master password: ")?;
+    let password = Zeroizing::new(rpassword::prompt_password("Enter master password: ")?);
+    let confirm = Zeroizing::new(rpassword::prompt_password("Confirm master password: ")?);
 
-    if password != confirm {
-        password.zeroize();
-        confirm.zeroize();
+    if *password != *confirm {
         return Err("passwords do not match".into());
     }
 
-    let result = create_vault(&password);
-    password.zeroize();
-    confirm.zeroize();
-
-    result?;
+    create_vault(&password)?;
     println!("vault_status=locked");
     Ok(())
 }

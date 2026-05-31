@@ -5,7 +5,9 @@ use tempfile::TempDir;
 fn returns_missing_or_locked_depending_on_real_filesystem() {
     let status = get_vault_status().unwrap();
     assert!(
-        status == VaultStatus::Missing || status == VaultStatus::Locked || status == VaultStatus::Corrupted,
+        status == VaultStatus::Missing
+            || status == VaultStatus::Locked
+            || status == VaultStatus::Corrupted,
         "unexpected status: {:?}",
         status
     );
@@ -35,7 +37,8 @@ fn returns_corrupted_when_vault_file_has_invalid_content() {
             Ok(()) => Ok(VaultStatus::Locked),
             Err(_) => Ok(VaultStatus::Corrupted),
         }
-    }).unwrap();
+    })
+    .unwrap();
 
     assert_eq!(status, VaultStatus::Corrupted);
 }
@@ -50,7 +53,7 @@ fn returns_corrupted_when_header_valid_but_kdf_params_zero() {
     data[0..4].copy_from_slice(b"KENV");
     data[4] = 1; // version
     data[5] = 1; // kdf_id
-    // m_cost, t_cost, p_cost remain 0 (bytes 6-17) — structurally invalid
+                 // m_cost, t_cost, p_cost remain 0 (bytes 6-17) — structurally invalid
     std::fs::write(&path, &data).unwrap();
 
     let status = get_vault_status_with(|| {
@@ -59,7 +62,8 @@ fn returns_corrupted_when_header_valid_but_kdf_params_zero() {
             Ok(()) => Ok(VaultStatus::Locked),
             Err(_) => Ok(VaultStatus::Corrupted),
         }
-    }).unwrap();
+    })
+    .unwrap();
 
     assert_eq!(status, VaultStatus::Corrupted);
 }
@@ -76,9 +80,9 @@ fn returns_corrupted_when_salt_is_all_zeros() {
     data[6..10].copy_from_slice(&1u32.to_be_bytes()); // m_cost = 1
     data[10..14].copy_from_slice(&1u32.to_be_bytes()); // t_cost = 1
     data[14..18].copy_from_slice(&1u32.to_be_bytes()); // p_cost = 1
-    // salt at bytes 18..50 remains all zeros
-    // nonce at bytes 50..62 remains all zeros
-    // ciphertext at bytes 62..91 remains all zeros
+                                                       // salt at bytes 18..50 remains all zeros
+                                                       // nonce at bytes 50..62 remains all zeros
+                                                       // ciphertext at bytes 62..91 remains all zeros
     std::fs::write(&path, &data).unwrap();
 
     let status = get_vault_status_with(|| {
@@ -87,7 +91,8 @@ fn returns_corrupted_when_salt_is_all_zeros() {
             Ok(()) => Ok(VaultStatus::Locked),
             Err(_) => Ok(VaultStatus::Corrupted),
         }
-    }).unwrap();
+    })
+    .unwrap();
 
     assert_eq!(status, VaultStatus::Corrupted);
 }
@@ -104,7 +109,7 @@ fn returns_corrupted_when_nonce_is_all_zeros() {
     data[6..10].copy_from_slice(&1u32.to_be_bytes()); // m_cost = 1
     data[10..14].copy_from_slice(&1u32.to_be_bytes()); // t_cost = 1
     data[14..18].copy_from_slice(&1u32.to_be_bytes()); // p_cost = 1
-    // salt at bytes 18..50 has valid random-looking data
+                                                       // salt at bytes 18..50 has valid random-looking data
     for i in 18..50 {
         data[i] = ((i as u32).wrapping_mul(0x9e3779b9)) as u8;
     }
@@ -117,7 +122,8 @@ fn returns_corrupted_when_nonce_is_all_zeros() {
             Ok(()) => Ok(VaultStatus::Locked),
             Err(_) => Ok(VaultStatus::Corrupted),
         }
-    }).unwrap();
+    })
+    .unwrap();
 
     assert_eq!(status, VaultStatus::Corrupted);
 }
@@ -138,7 +144,7 @@ fn returns_locked_when_header_valid_and_ciphertext_is_garbage() {
     data[6..10].copy_from_slice(&1u32.to_be_bytes()); // m_cost = 1
     data[10..14].copy_from_slice(&1u32.to_be_bytes()); // t_cost = 1
     data[14..18].copy_from_slice(&1u32.to_be_bytes()); // p_cost = 1
-    // salt at bytes 18..50 has valid data
+                                                       // salt at bytes 18..50 has valid data
     for i in 18..50 {
         data[i] = ((i as u32).wrapping_mul(0x9e3779b9)) as u8;
     }
@@ -155,7 +161,8 @@ fn returns_locked_when_header_valid_and_ciphertext_is_garbage() {
             Ok(()) => Ok(VaultStatus::Locked),
             Err(_) => Ok(VaultStatus::Corrupted),
         }
-    }).unwrap();
+    })
+    .unwrap();
 
     assert_eq!(status, VaultStatus::Locked);
 }

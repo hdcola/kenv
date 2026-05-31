@@ -9,7 +9,10 @@ fn weak_password_leaves_no_vault_file() {
     let result = create_vault_at(&path, "", &kenv_core::crypto::KdfParams::recommended());
 
     assert!(matches!(result, Err(KenvError::WeakPassword)));
-    assert!(!path.exists(), "no file should exist after WeakPassword rejection");
+    assert!(
+        !path.exists(),
+        "no file should exist after WeakPassword rejection"
+    );
 }
 
 #[test]
@@ -17,14 +20,21 @@ fn vault_already_exists_on_second_creation() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("vault.kenv");
 
-    let first = create_vault_at(&path, "password", &kenv_core::crypto::KdfParams::recommended());
+    let first = create_vault_at(
+        &path,
+        "password",
+        &kenv_core::crypto::KdfParams::recommended(),
+    );
     assert!(first.is_ok(), "first creation should succeed");
     assert!(path.exists(), "vault file should exist");
 
     let first_size = std::fs::metadata(&path).unwrap().len();
 
-    let second =
-        create_vault_at(&path, "password", &kenv_core::crypto::KdfParams::recommended());
+    let second = create_vault_at(
+        &path,
+        "password",
+        &kenv_core::crypto::KdfParams::recommended(),
+    );
 
     assert!(matches!(second, Err(KenvError::VaultAlreadyExists)));
     assert_eq!(

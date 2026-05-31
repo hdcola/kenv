@@ -36,7 +36,6 @@ async function refreshVaultStatus() {
   try {
     vaultStatus.value = await invoke<VaultStatus>("get_vault_status");
   } catch (error) {
-    vaultStatus.value = "unknown";
     rawStatusError.value = error instanceof Error ? error.message : String(error);
   }
 }

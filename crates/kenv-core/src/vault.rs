@@ -74,7 +74,18 @@ pub fn write_vault_file(
     file.sync_all().map_err(|_| {
         let _ = std::fs::remove_file(path);
         KenvError::FileOperationFailed
-    })
+    })?;
+
+    if let Some(parent) = path.parent() {
+        std::fs::File::open(parent)
+            .and_then(|d| d.sync_all())
+            .map_err(|_| {
+                let _ = std::fs::remove_file(path);
+                KenvError::FileOperationFailed
+            })?;
+    }
+
+    Ok(())
 }
 
 pub fn validate_vault_header(data: &[u8]) -> Result<(), KenvError> {

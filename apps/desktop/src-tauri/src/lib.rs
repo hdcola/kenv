@@ -37,7 +37,10 @@ mod tests {
     fn command_returns_vault_status_successfully() {
         let status = get_vault_status().expect("command should return vault status");
         assert!(
-            matches!(status, VaultStatus::Missing | VaultStatus::Locked | VaultStatus::Corrupted),
+            matches!(
+                status,
+                VaultStatus::Missing | VaultStatus::Locked | VaultStatus::Corrupted
+            ),
             "unexpected status: {}",
             status.as_script_value()
         );
