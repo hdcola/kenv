@@ -8,7 +8,7 @@ import VaultCreateForm from "./VaultCreateForm.vue";
 type VaultStatus = "missing" | "locked" | "unlocked" | "corrupted";
 type VaultStatusView = VaultStatus | "unknown";
 
-const vaultStatus = ref<VaultStatusView>("missing");
+const vaultStatus = ref<VaultStatusView>("unknown");
 const rawStatusError = ref("");
 
 const { locale, t } = useI18n();

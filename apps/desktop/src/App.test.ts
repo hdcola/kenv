@@ -99,6 +99,13 @@ describe("App", () => {
     expect(wrapper.find(".status-title").exists()).toBe(false);
   });
 
+  it("does not render VaultCreateForm before the first status load completes", async () => {
+    invokeMock.mockResolvedValueOnce("locked");
+    const wrapper = mountApp();
+    expect(wrapper.find(".create-title").exists()).toBe(false);
+    await flushPromises();
+  });
+
   it("localizes the refresh button aria-label", async () => {
     invokeMock.mockResolvedValueOnce("missing");
     const wrapper = mountApp("zh-CN");
