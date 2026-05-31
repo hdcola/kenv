@@ -81,7 +81,7 @@ The MVP does not promise:
 - Environment variable injection into GUI apps launched from Finder, Spotlight, or Dock.
 - Implementation of iCloud, WebDAV, or other sync services.
 - Team sharing, organization permissions, approval flows, or audit backends.
-- Windows/Linux usable releases.
+- A usable Windows release.
 - CI/CD integrations.
 - Browser extensions or IDE plugins.
 

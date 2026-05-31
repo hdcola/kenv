@@ -10,7 +10,7 @@ export const zhCN = {
     security: "安全",
   },
   topbar: {
-    eyebrow: "面向 macOS 的开发者凭据管理",
+    eyebrow: "面向 macOS 和 Linux 的开发者凭据管理",
     title: "安全上下文，准备好迎接第一个保险库。",
     refresh: "刷新保险库状态",
     languageLabel: "语言",
@@ -23,7 +23,7 @@ export const zhCN = {
     unknown: "未知",
     corrupted: "已损坏",
     locked_description: "已加密，完整性将在解锁时验证。",
-    copy: "共享的 Rust 核心已经接通。保险库创建和加密存储仍按 MVP 安全边界暂缓开放。",
+    copy: "共享的 Rust 核心已经接通。保险库创建现已可用，解锁与凭证工作流是接下来的 MVP 重点。",
   },
   panels: {
     contexts: {
@@ -44,7 +44,7 @@ export const zhCN = {
     security: {
       eyebrow: "平台能力",
       title: "已规划 macOS 解锁适配器",
-      copy: "Touch ID 和 Secure Enclave 支持会在不直接持有密文的前提下提升本地解锁体验。",
+      copy: "当前构建目标是 macOS 和 Linux。Touch ID 和 Secure Enclave 支持会在不直接持有密文的前提下提升 macOS 本地解锁体验。",
     },
   },
   errors: {

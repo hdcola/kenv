@@ -57,7 +57,7 @@ pub fn write_vault_file(
         .mode(0o600)
         .open(path);
     #[cfg(not(unix))]
-    compile_error!("vault file creation without 0o600-equivalent permissions is not supported on this platform");
+    compile_error!("vault file creation is currently supported only on macOS and Linux; Windows support will be added later");
     let mut file = open_result.map_err(|e| {
         if e.kind() == std::io::ErrorKind::AlreadyExists {
             KenvError::VaultAlreadyExists

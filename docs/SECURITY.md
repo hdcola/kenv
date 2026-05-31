@@ -15,6 +15,7 @@ Primary goals:
 - After unlock, plaintext should only exist briefly inside necessary memory and process boundaries.
 - The desktop app and CLI must share the same security logic.
 - On macOS, Secure Enclave/Touch ID can improve the unlock experience.
+- The current implementation target is macOS and Linux. Windows support is deferred for a later phase.
 
 ## Hybrid Unlock Model
 
@@ -81,7 +82,7 @@ A complete `ssh-agent` replacement is a future goal. The MVP only defines the lo
 
 ## Platform Capabilities
 
-macOS is the first target platform.
+macOS and Linux are the current target platforms. Windows support is deferred for a later phase.
 
 On macOS, kenv may use:
 
@@ -92,7 +93,7 @@ On macOS, kenv may use:
 
 These capabilities improve unlock UX and protect local unlock material. They do not change the zero-knowledge sync principle: synced vault files must remain ciphertext managed by kenv.
 
-Future Windows/Linux support should be added through platform adapters rather than embedding macOS logic in Rust core.
+Future Windows support should be added through platform adapters rather than embedding macOS logic in Rust core.
 
 ## Security Documentation Boundaries
 

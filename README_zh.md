@@ -2,7 +2,7 @@
 
 `kenv` 是一款面向开发者的上下文环境安全管理工具。它的目标是把环境变量和 SSH key 统一放进一个本地加密保险箱中管理，让开发者在不同项目、终端和工具之间切换凭证时更安全、更顺滑。
 
-本项目当前处于 workspace 初始化阶段。仓库中已经包含产品方向、MVP 范围、架构设计、共享 Rust core、脚本友好的 CLI，以及一个最小 Tauri + Vue 桌面壳。加密 vault 存储和凭证工作流尚未实现。
+本项目当前处于早期 MVP 阶段。仓库中已经包含产品方向、MVP 范围、架构设计、共享 Rust core、脚本友好的 CLI，以及一个带本地加密 vault 创建能力的 Tauri + Vue 桌面应用。vault 解锁、凭证管理和更完整的工作流仍在持续实现中。
 
 ## 为什么需要 kenv
 
@@ -17,7 +17,7 @@
 
 ## 产品定位
 
-`kenv` 是一个 macOS first 的 Rust + Tauri 2.0 桌面工具，并配套 CLI/shell 集成。
+`kenv` 当前是一个支持 macOS 和 Linux 的 Rust + Tauri 2.0 桌面工具，并配套 CLI/shell 集成。Windows 支持会在后续阶段补上。
 
 核心方向：
 
@@ -35,7 +35,7 @@
 1. 开发者可以创建并解锁本地加密 vault，按 context 保存环境变量，并从终端激活这些变量。
 2. 开发者可以在 vault 中保存 SSH key material 或 key reference，并为 SSH 相关操作触发本地解锁流程。
 
-MVP 必须包含桌面端和 CLI 两个入口，但不会承诺完整替代 `ssh-agent`、实现 GUI app 环境注入、云同步、团队协作或跨平台发布。
+MVP 必须包含桌面端和 CLI 两个入口，但不会承诺完整替代 `ssh-agent`、实现 GUI app 环境注入、云同步、团队协作或 Windows 版本发布。
 
 下面的清单用于跟踪仓库当前已经实现的状态，不只是 MVP 目标描述。
 
@@ -51,8 +51,8 @@ MVP 必须包含桌面端和 CLI 两个入口，但不会承诺完整替代 `ssh
 ### Vault
 
 - [x] 当前可以报告 `missing` 状态的 vault 状态
-- [ ] 本地加密 vault 文件格式已实现
-- [ ] vault 创建流程已实现
+- [x] 本地加密 vault 文件格式已实现
+- [x] vault 创建流程已实现
 - [ ] vault 解锁流程已实现
 - [ ] vault 锁定流程已实现
 
@@ -82,7 +82,8 @@ MVP 必须包含桌面端和 CLI 两个入口，但不会承诺完整替代 `ssh
 
 - [x] Tauri 桌面壳已跑通，并接入共享 core 状态
 - [x] UI 中已展示 vault 状态
-- [ ] UI 中的 vault 创建、解锁、锁定操作已实现
+- [x] UI 中的 vault 创建操作已实现
+- [ ] UI 中的 vault 解锁、锁定操作已实现
 - [ ] context 管理 UI 已实现
 - [ ] 环境变量管理 UI 已实现
 - [ ] SSH key 管理 UI 已实现
@@ -105,7 +106,7 @@ MVP 必须包含桌面端和 CLI 两个入口，但不会承诺完整替代 `ssh
 - Rust core：vault、crypto、context、环境变量和 SSH key metadata。
 - Tauri desktop：桌面 UI、命令桥接、状态展示和用户操作入口。
 - CLI helper：shell 激活、SSH 工作流入口和脚本友好的输出。
-- macOS platform adapter：Secure Enclave/Touch ID 等平台能力封装。
+- platform adapter：当前聚焦 macOS 的 Secure Enclave/Touch ID 等平台能力，并为后续 Linux/Windows 扩展保留边界。
 - Storage/sync boundary：本地密文文件格式，以及未来同步适配边界。
 
 更多架构说明见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
@@ -130,13 +131,13 @@ MVP 必须包含桌面端和 CLI 两个入口，但不会承诺完整替代 `ssh
 - Finder/Spotlight 启动的 GUI 应用环境变量注入。
 - iCloud/WebDAV 同步实现。
 - 团队 vault、权限模型或组织级审计。
-- Windows/Linux 可用版本。
+- 可用的 Windows 版本。
 
 ## 技术方向
 
 - Rust
 - Tauri 2.0
-- macOS first
+- 当前支持 macOS 和 Linux
 - CLI/shell integration
 - Planned AES-256-GCM encrypted local vault
 - Planned Secure Enclave/Touch ID unlock support on macOS
@@ -156,6 +157,12 @@ pnpm install
 cargo test --workspace
 ```
 
+当前平台支持：
+
+- macOS：当前开发和测试已支持。
+- Linux：当前开发和测试已支持。
+- Windows：暂未实现。
+
 常用命令：
 
 ```sh
@@ -166,7 +173,7 @@ pnpm lint
 cargo run -p kenv-cli -- status
 ```
 
-在加密 vault 存储实现之前，初始应用会有意报告 `vault_status=missing`。不要提交 `.env` 文件或包含明文凭证的测试 fixture。
+当前应用会按真实状态报告 vault，包括创建前的初始 `vault_status=missing` 状态。不要提交 `.env` 文件或包含明文凭证的测试 fixture。
 
 ## License
 

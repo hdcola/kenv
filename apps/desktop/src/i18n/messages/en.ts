@@ -10,7 +10,7 @@ export const en = {
     security: "Security",
   },
   topbar: {
-    eyebrow: "macOS-first developer credentials",
+    eyebrow: "Developer credentials for macOS and Linux",
     title: "Secure contexts, ready for the first vault.",
     refresh: "Refresh vault status",
     languageLabel: "Language",
@@ -24,7 +24,7 @@ export const en = {
     corrupted: "Corrupted",
     locked_description: "Encrypted. Full integrity verified on unlock.",
     copy:
-      "The shared Rust core is connected. Vault creation and encrypted storage are intentionally still waiting behind the MVP security boundary.",
+      "The shared Rust core is connected. Vault creation is available today, and unlock plus credential workflows are the next MVP steps.",
   },
   panels: {
     contexts: {
@@ -45,7 +45,7 @@ export const en = {
     security: {
       eyebrow: "platform capabilities",
       title: "macOS unlock adapter planned",
-      copy: "Touch ID and Secure Enclave support will improve local unlock without owning ciphertext.",
+      copy: "Current builds target macOS and Linux. Touch ID and Secure Enclave support will improve local unlock on macOS without owning ciphertext.",
     },
   },
   errors: {
