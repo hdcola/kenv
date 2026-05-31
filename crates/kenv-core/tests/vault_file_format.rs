@@ -1,5 +1,7 @@
 use kenv_core::crypto::KdfParams;
 use kenv_core::vault::{validate_vault_header, write_vault_file, MAGIC};
+#[cfg(not(unix))]
+use kenv_core::KenvError;
 use tempfile::NamedTempFile;
 
 fn p() -> KdfParams {
@@ -105,4 +107,13 @@ fn validate_rejects_wrong_magic() {
 #[test]
 fn validate_rejects_too_short() {
     assert!(validate_vault_header(&[0u8; 10]).is_err());
+}
+
+#[cfg(not(unix))]
+#[test]
+fn write_vault_file_returns_platform_error_on_non_unix() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("vault.kenv");
+    let result = write_vault_file(&path, &[0u8; 32], &[0u8; 12], &[], &p());
+    assert!(matches!(result, Err(KenvError::PlatformCapabilityUnavailable)));
 }
