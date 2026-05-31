@@ -65,7 +65,7 @@ It is responsible for:
 - Detecting platform capability availability.
 - Translating platform errors into error types the core can understand.
 
-This module keeps kenv macOS first without hard-coding future Windows/Linux support into core logic.
+This module keeps current macOS support and future Windows support from leaking platform-specific behavior into core logic, while Linux continues to use the shared core path.
 
 ### Storage and sync boundary
 

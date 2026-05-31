@@ -2,15 +2,21 @@
   "name": "kenv",
   "private": true,
   "version": "0.1.0",
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "scripts": {
+    "dev:cli": "cargo run -p kenv-cli --",
     "dev:desktop": "pnpm --filter desktop tauri dev",
+    "build:cli": "cargo build -p kenv-cli --release",
     "build:desktop": "pnpm --filter desktop tauri build",
     "build:frontend": "pnpm --filter desktop build",
     "test": "cargo test --workspace && pnpm --filter desktop test",
     "lint": "cargo fmt --all -- --check"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@tauri-apps/cli": "^2"
   }
 }

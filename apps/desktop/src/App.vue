@@ -1,36 +1,42 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { useI18n } from "vue-i18n";
+import { persistLocale, SUPPORTED_LOCALES, type SupportedLocale } from "./i18n";
+import VaultCreateForm from "./VaultCreateForm.vue";
 
-type VaultStatus = "missing" | "locked" | "unlocked";
+type VaultStatus = "missing" | "locked" | "unlocked" | "corrupted";
 type VaultStatusView = VaultStatus | "unknown";
 
-const vaultStatus = ref<VaultStatusView>("missing");
-const statusError = ref("");
+const vaultStatus = ref<VaultStatusView>("unknown");
+const rawStatusError = ref("");
 
-const statusLabel = computed(() => {
-  switch (vaultStatus.value) {
-    case "locked":
-      return "Locked";
-    case "unknown":
-      return "Unknown";
-    case "unlocked":
-      return "Unlocked";
-    default:
-      return "Missing";
+const { locale, t } = useI18n();
+
+const statusLabel = computed(() => t(`status.${vaultStatus.value}`));
+const statusTone = computed(() => `status-pill status-pill--${vaultStatus.value}`);
+const statusError = computed(() =>
+  rawStatusError.value ? t("errors.refreshFailed", { message: rawStatusError.value }) : "",
+);
+const statusDescription = computed(() => {
+  if (vaultStatus.value === "locked") {
+    return t("status.locked_description");
   }
+  return t("status.copy");
 });
 
-const statusTone = computed(() => `status-pill status-pill--${vaultStatus.value}`);
+function updateLocale(nextLocale: SupportedLocale) {
+  locale.value = nextLocale;
+  persistLocale(nextLocale);
+}
 
 async function refreshVaultStatus() {
-  statusError.value = "";
+  rawStatusError.value = "";
 
   try {
     vaultStatus.value = await invoke<VaultStatus>("get_vault_status");
   } catch (error) {
-    vaultStatus.value = "unknown";
-    statusError.value = error instanceof Error ? error.message : String(error);
+    rawStatusError.value = error instanceof Error ? error.message : String(error);
   }
 }
 
@@ -39,70 +45,85 @@ onMounted(refreshVaultStatus);
 
 <template>
   <main class="shell">
-    <aside class="sidebar" aria-label="kenv sections">
+    <aside class="sidebar" :aria-label="t('sidebar.ariaLabel')">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true">k</span>
         <div>
-          <p class="eyebrow">local vault</p>
+          <p class="eyebrow">{{ t("sidebar.eyebrow") }}</p>
           <h1>kenv</h1>
         </div>
       </div>
 
       <nav class="nav-list">
-        <a class="nav-item nav-item--active" href="#vault">Vault</a>
-        <a class="nav-item" href="#contexts">Contexts</a>
-        <a class="nav-item" href="#ssh">SSH keys</a>
-        <a class="nav-item" href="#security">Security</a>
+        <a class="nav-item nav-item--active" href="#vault">{{ t("nav.vault") }}</a>
+        <a class="nav-item" href="#contexts">{{ t("nav.contexts") }}</a>
+        <a class="nav-item" href="#ssh">{{ t("nav.ssh") }}</a>
+        <a class="nav-item" href="#security">{{ t("nav.security") }}</a>
       </nav>
     </aside>
 
     <section class="workspace">
       <header class="topbar">
         <div>
-          <p class="eyebrow">macOS-first developer credentials</p>
-          <h2>Secure contexts, ready for the first vault.</h2>
+          <p class="eyebrow">{{ t("topbar.eyebrow") }}</p>
+          <h2>{{ t("topbar.title") }}</h2>
         </div>
-        <button class="icon-button" type="button" aria-label="Refresh vault status" @click="refreshVaultStatus">
-          ↻
-        </button>
+
+        <div class="topbar-actions">
+          <label class="locale-picker">
+            <span class="locale-label">{{ t("topbar.languageLabel") }}</span>
+            <select class="locale-select" :value="locale" @change="updateLocale(($event.target as HTMLSelectElement).value as SupportedLocale)">
+              <option v-for="supportedLocale in SUPPORTED_LOCALES" :key="supportedLocale" :value="supportedLocale">
+                {{ supportedLocale === "zh-CN" ? "中文" : "English" }}
+              </option>
+            </select>
+          </label>
+
+          <button class="icon-button" type="button" :aria-label="t('topbar.refresh')" @click="refreshVaultStatus">
+            ↻
+          </button>
+        </div>
       </header>
 
-      <section id="vault" class="status-band">
-        <div>
-          <p class="eyebrow">vault status</p>
-          <p class="status-title">{{ statusLabel }}</p>
-          <p class="status-copy">
-            The shared Rust core is connected. Vault creation and encrypted storage are intentionally
-            still waiting behind the MVP security boundary.
-          </p>
-          <p v-if="statusError" class="error-text">{{ statusError }}</p>
-        </div>
-        <span :class="statusTone">{{ vaultStatus }}</span>
-      </section>
+      <VaultCreateForm
+        v-if="vaultStatus === 'missing'"
+        @vault-created="refreshVaultStatus"
+      />
+      <template v-else>
+        <section id="vault" class="status-band">
+          <div>
+            <p class="eyebrow">{{ t("status.eyebrow") }}</p>
+            <p class="status-title">{{ statusLabel }}</p>
+            <p class="status-copy">{{ statusDescription }}</p>
+            <p v-if="statusError" class="error-text">{{ statusError }}</p>
+          </div>
+          <span :class="statusTone">{{ statusLabel }}</span>
+        </section>
+      </template>
 
       <section class="grid">
         <article id="contexts" class="panel">
-          <p class="eyebrow">contexts</p>
-          <h3>No contexts yet</h3>
-          <p>Project, client, and environment contexts will appear here once vault storage lands.</p>
+          <p class="eyebrow">{{ t("panels.contexts.eyebrow") }}</p>
+          <h3>{{ t("panels.contexts.title") }}</h3>
+          <p>{{ t("panels.contexts.copy") }}</p>
         </article>
 
         <article class="panel">
-          <p class="eyebrow">environment variables</p>
-          <h3>Plaintext stays out of storage</h3>
-          <p>Values will be revealed only after explicit unlock and emitted to shells on request.</p>
+          <p class="eyebrow">{{ t("panels.env.eyebrow") }}</p>
+          <h3>{{ t("panels.env.title") }}</h3>
+          <p>{{ t("panels.env.copy") }}</p>
         </article>
 
         <article id="ssh" class="panel">
-          <p class="eyebrow">ssh keys</p>
-          <h3>Key records pending</h3>
-          <p>Imported key material and path references will share the same encrypted core model.</p>
+          <p class="eyebrow">{{ t("panels.ssh.eyebrow") }}</p>
+          <h3>{{ t("panels.ssh.title") }}</h3>
+          <p>{{ t("panels.ssh.copy") }}</p>
         </article>
 
         <article id="security" class="panel">
-          <p class="eyebrow">platform capabilities</p>
-          <h3>macOS unlock adapter planned</h3>
-          <p>Touch ID and Secure Enclave support will improve local unlock without owning ciphertext.</p>
+          <p class="eyebrow">{{ t("panels.security.eyebrow") }}</p>
+          <h3>{{ t("panels.security.title") }}</h3>
+          <p>{{ t("panels.security.copy") }}</p>
         </article>
       </section>
     </section>
@@ -224,12 +245,42 @@ onMounted(refreshVaultStatus);
   font-weight: 500;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.locale-picker {
+  display: grid;
+  gap: 6px;
+}
+
+.locale-label {
+  color: #8b6f37;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.locale-select {
+  min-width: 110px;
+  padding: 9px 12px;
+  border: 1px solid #cabf9f;
+  color: #1f2523;
+  background: #fffaf0;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px;
+}
+
 .icon-button {
   display: grid;
   width: 42px;
   height: 42px;
   flex: 0 0 auto;
   place-items: center;
+  align-self: end;
   border: 1px solid #1f2523;
   border-radius: 50%;
   color: #1f2523;
@@ -295,6 +346,11 @@ onMounted(refreshVaultStatus);
   background: #ece4ff;
 }
 
+.status-pill--corrupted {
+  color: #b85c0f;
+  background: #fed7a8;
+}
+
 .error-text {
   color: #9b2d20;
 }
@@ -339,6 +395,14 @@ onMounted(refreshVaultStatus);
   .topbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .topbar-actions {
+    justify-content: space-between;
+  }
+
+  .icon-button {
+    align-self: auto;
   }
 
   .grid {

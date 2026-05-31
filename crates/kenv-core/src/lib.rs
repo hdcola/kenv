@@ -1,5 +1,12 @@
+pub mod crypto;
+pub mod vault;
+
+use crate::crypto::KdfParams;
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use thiserror::Error;
+use zeroize::Zeroizing;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -7,6 +14,7 @@ pub enum VaultStatus {
     Missing,
     Locked,
     Unlocked,
+    Corrupted,
 }
 
 impl VaultStatus {
@@ -15,6 +23,7 @@ impl VaultStatus {
             Self::Missing => "missing",
             Self::Locked => "locked",
             Self::Unlocked => "unlocked",
+            Self::Corrupted => "corrupted",
         }
     }
 }
@@ -37,10 +46,58 @@ pub enum KenvError {
     PlatformCapabilityUnavailable,
     #[error("file operation failed")]
     FileOperationFailed,
+    #[error("vault already exists")]
+    VaultAlreadyExists,
+    #[error("vault file has an invalid format")]
+    InvalidVaultFormat,
+    #[error("encryption or decryption failed")]
+    EncryptionError,
+    #[error("password must not be empty")]
+    WeakPassword,
+}
+
+pub fn create_vault(password: &str) -> Result<(), KenvError> {
+    let path = vault::vault_path()?;
+    create_vault_at(&path, password, &KdfParams::recommended())
+}
+
+pub fn create_vault_at(path: &Path, password: &str, params: &KdfParams) -> Result<(), KenvError> {
+    if password.trim().is_empty() {
+        return Err(KenvError::WeakPassword);
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|_| KenvError::FileOperationFailed)?;
+    }
+    let mut salt = [0u8; 32];
+    let mut nonce = [0u8; 12];
+    rand::thread_rng().fill_bytes(&mut salt);
+    rand::thread_rng().fill_bytes(&mut nonce);
+    let key = Zeroizing::new(
+        crypto::derive_key(password, &salt, params).map_err(|_| KenvError::EncryptionError)?,
+    );
+    let payload = vault::VaultPayload::new();
+    let plaintext = {
+        let data = serde_json::to_vec(&payload).map_err(|_| KenvError::FileOperationFailed)?;
+        zeroize::Zeroizing::new(data)
+    };
+    let ciphertext =
+        crypto::encrypt(&*key, &nonce, &plaintext).map_err(|_| KenvError::EncryptionError)?;
+    vault::write_vault_file(path, &salt, &nonce, &ciphertext, params)
 }
 
 pub fn get_vault_status() -> Result<VaultStatus, KenvError> {
-    Ok(VaultStatus::Missing)
+    let path = vault::vault_path()?;
+    if !path.exists() {
+        return Ok(VaultStatus::Missing);
+    }
+    let data = std::fs::read(&path).map_err(|_| KenvError::FileOperationFailed)?;
+    match vault::validate_vault_header(&data) {
+        // Header is structurally valid. Ciphertext integrity cannot be verified
+        // without the decryption key; that check belongs in unlock(). A vault with
+        // corrupted ciphertext will return Locked here and only fail at unlock time.
+        Ok(()) => Ok(VaultStatus::Locked),
+        Err(_) => Ok(VaultStatus::Corrupted),
+    }
 }
 
 pub fn get_vault_status_with<F>(status_provider: F) -> Result<VaultStatus, KenvError>

@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
-use kenv_core::{get_vault_status, KenvError, VaultStatus};
+use kenv_core::{create_vault, get_vault_status, KenvError, VaultStatus};
+use zeroize::Zeroizing;
 
 #[derive(Debug, Parser)]
 #[command(name = "kenv")]
@@ -13,6 +14,8 @@ struct Cli {
 enum Commands {
     /// Print the current vault status in a script-friendly format.
     Status,
+    /// Create a new encrypted vault with a master password.
+    Create,
 }
 
 fn main() {
@@ -20,6 +23,7 @@ fn main() {
 
     let result = match cli.command {
         Commands::Status => print_status(),
+        Commands::Create => create_new_vault(),
     };
 
     if let Err(error) = result {
@@ -31,6 +35,19 @@ fn main() {
 fn print_status() -> Result<(), Box<dyn std::error::Error>> {
     let output = render_status(get_vault_status)?;
     println!("{output}");
+    Ok(())
+}
+
+fn create_new_vault() -> Result<(), Box<dyn std::error::Error>> {
+    let password = Zeroizing::new(rpassword::prompt_password("Enter master password: ")?);
+    let confirm = Zeroizing::new(rpassword::prompt_password("Confirm master password: ")?);
+
+    if *password != *confirm {
+        return Err("passwords do not match".into());
+    }
+
+    create_vault(&password)?;
+    println!("vault_status=locked");
     Ok(())
 }
 
@@ -67,5 +84,11 @@ mod tests {
     fn format_cli_error_uses_expected_prefix() {
         let message = super::format_cli_error(&KenvError::UnlockFailed);
         assert_eq!(message, "error=unlock failed");
+    }
+
+    #[test]
+    fn create_vault_outputs_locked_status() {
+        let output = render_status(|| Ok(VaultStatus::Locked)).unwrap();
+        assert_eq!(output, "vault_status=locked");
     }
 }

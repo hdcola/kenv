@@ -63,7 +63,7 @@ macOS platform adapter 封装平台能力。
 - 平台能力探测。
 - 把平台错误转换为 core 可以理解的错误类型。
 
-该模块的存在是为了保持 macOS first，同时不把未来 Windows/Linux 适配写死在核心逻辑里。
+该模块的存在是为了让当前 macOS 支持与未来 Windows 支持保持清晰边界，同时 Linux 继续走共享 core 路径，不把平台差异写死在核心逻辑里。
 
 ### Storage and sync boundary
 

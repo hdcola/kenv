@@ -9,9 +9,16 @@ This repository uses a split workspace:
 ## Prerequisites
 
 - Rust and Cargo.
-- Node.js.
+- Node.js >= 22.
 - pnpm.
 - Xcode Command Line Tools on macOS.
+- Linux desktop dependencies required by Tauri/WebKitGTK when developing on Linux.
+
+## Platform Support
+
+- macOS: currently supported.
+- Linux: currently supported.
+- Windows: not implemented yet.
 
 ## Setup
 
@@ -35,4 +42,4 @@ cargo run -p kenv-cli -- status
 - Do not commit `.env` files or plaintext credential fixtures.
 - Do not log environment variable values, private key contents, or unlock material.
 - Desktop and CLI features must call `kenv-core` for vault state and security behavior.
-- The initial implementation intentionally reports a missing vault until encrypted storage is added.
+- The current implementation reports real vault state, including the initial missing state before a vault is created.

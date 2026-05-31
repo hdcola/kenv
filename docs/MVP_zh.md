@@ -79,7 +79,7 @@ MVP 不承诺以下能力：
 - Finder、Spotlight 或 Dock 启动的 GUI 应用环境变量注入。
 - iCloud、WebDAV 或其他同步服务的实现。
 - 团队共享、组织权限、审批或审计后台。
-- Windows/Linux 可用版本。
+- 可用的 Windows 版本。
 - CI/CD 集成。
 - 浏览器扩展或 IDE 插件。
 

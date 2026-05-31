@@ -2,7 +2,7 @@
 
 `kenv` is a context-aware environment security manager for developers. Its goal is to manage environment variables and SSH keys together in a local encrypted vault, making credential switching across projects, terminals, and tools safer and smoother.
 
-This project is currently in the workspace initialization stage. The repository includes the product direction, MVP scope, architecture plan, a shared Rust core, a script-friendly CLI, and a minimal Tauri + Vue desktop shell. Encrypted vault storage and credential workflows have not been implemented yet.
+This project is currently in an early MVP stage. The repository now includes the product direction, MVP scope, architecture plan, a shared Rust core, a script-friendly CLI, and a Tauri + Vue desktop app with local encrypted vault creation. Vault unlock, credential management, and broader workflows are still in progress.
 
 Chinese documentation is available in [README_zh.md](README_zh.md).
 
@@ -19,7 +19,7 @@ Modern development credentials are often scattered across many places:
 
 ## Product Positioning
 
-`kenv` is a macOS-first Rust + Tauri 2.0 desktop tool with companion CLI/shell integrations.
+`kenv` currently supports macOS and Linux as a Rust + Tauri 2.0 desktop tool with companion CLI/shell integrations. Windows support is planned for a later phase.
 
 Core directions:
 
@@ -37,7 +37,7 @@ The first MVP should prove two narrow working loops:
 1. A developer can create and unlock a local encrypted vault, store environment variables by context, and activate those variables from the terminal.
 2. A developer can store SSH key material or SSH key references in the vault and trigger a local unlock flow for SSH-related usage.
 
-The MVP must include both desktop and CLI entrypoints, but it will not promise a complete `ssh-agent` replacement, GUI app environment injection, cloud sync, team collaboration, or cross-platform releases.
+The MVP must include both desktop and CLI entrypoints, but it will not promise a complete `ssh-agent` replacement, GUI app environment injection, cloud sync, team collaboration, or a Windows release.
 
 The checklist below tracks implemented repository status today, not just the intended MVP target state.
 
@@ -53,8 +53,8 @@ The checklist below tracks implemented repository status today, not just the int
 ### Vault
 
 - [x] Vault status can be reported as `missing`
-- [ ] Local encrypted vault file format is implemented
-- [ ] Vault creation flow is implemented
+- [x] Local encrypted vault file format is implemented
+- [x] Vault creation flow is implemented
 - [ ] Vault unlock flow is implemented
 - [ ] Vault lock flow is implemented
 
@@ -84,7 +84,8 @@ The checklist below tracks implemented repository status today, not just the int
 
 - [x] Tauri desktop shell is running with shared-core status wiring
 - [x] Vault status is shown in the UI
-- [ ] Vault create/unlock/lock actions are implemented in the UI
+- [x] Vault creation is implemented in the UI
+- [ ] Vault unlock/lock actions are implemented in the UI
 - [ ] Context management UI is implemented
 - [ ] Environment variable management UI is implemented
 - [ ] SSH key management UI is implemented
@@ -107,7 +108,7 @@ Planned boundaries:
 - Rust core: vault, crypto, context, environment variables, and SSH key metadata.
 - Tauri desktop: UI, command bridge, status display, and user operation entrypoint.
 - CLI helper: shell activation, SSH workflow entrypoint, and script-friendly output.
-- macOS platform adapter: Secure Enclave/Touch ID and related platform capabilities.
+- platform adapters: current macOS Secure Enclave/Touch ID integration, with room to extend Linux and Windows-specific capabilities later.
 - Storage/sync boundary: local ciphertext file format and future sync adapter boundary.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for more detail.
@@ -132,13 +133,13 @@ The current stage does not promise:
 - Environment variable injection into GUI apps launched from Finder/Spotlight/Dock.
 - iCloud/WebDAV sync implementation.
 - Team vaults, permission models, or organization-level audit.
-- Windows/Linux usable releases.
+- A usable Windows release.
 
 ## Technology Direction
 
 - Rust
 - Tauri 2.0
-- macOS first
+- Currently supported on macOS and Linux
 - CLI/shell integration
 - Planned AES-256-GCM encrypted local vault
 - Planned Secure Enclave/Touch ID unlock support on macOS
@@ -158,6 +159,12 @@ pnpm install
 cargo test --workspace
 ```
 
+Current platform support:
+
+- macOS: supported for current development and testing.
+- Linux: supported for current development and testing.
+- Windows: not implemented yet.
+
 Useful commands:
 
 ```sh
@@ -168,7 +175,7 @@ pnpm lint
 cargo run -p kenv-cli -- status
 ```
 
-The initial app intentionally reports `vault_status=missing` until encrypted vault storage is implemented. Do not commit `.env` files or plaintext credential fixtures.
+Today the app reports real vault status, including the initial `vault_status=missing` state before a vault is created. Do not commit `.env` files or plaintext credential fixtures.
 
 ## License
 

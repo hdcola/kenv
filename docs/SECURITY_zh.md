@@ -13,6 +13,7 @@
 - 解锁后的明文只应在必要的内存和进程边界中短暂存在。
 - 桌面端和 CLI 必须共享同一套安全逻辑。
 - macOS 上可以使用 Secure Enclave/Touch ID 改善解锁体验。
+- 当前实现目标平台是 macOS 和 Linux。Windows 支持延后到后续阶段处理。
 
 ## 混合解锁模型
 
@@ -79,7 +80,7 @@ MVP 可以保存 SSH key material 或 key reference。
 
 ## 平台能力
 
-macOS 是第一目标平台。
+macOS 和 Linux 是当前目标平台。Windows 支持会在后续阶段处理。
 
 macOS 上，kenv 可以使用：
 
@@ -90,7 +91,7 @@ macOS 上，kenv 可以使用：
 
 这些能力用于改善解锁体验和保护本机解锁材料。它们不改变零知识同步原则：同步出去的 vault 文件仍然必须是 kenv 自己管理的密文。
 
-未来 Windows/Linux 支持需要通过平台 adapter 扩展，而不是把 macOS 逻辑写进 Rust core。
+未来 Windows 支持需要通过平台 adapter 扩展，而不是把 macOS 逻辑写进 Rust core。
 
 ## 安全文档承诺边界
 

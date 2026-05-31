@@ -11,7 +11,10 @@ path = "src/main.rs"
 [dependencies]
 clap.workspace = true
 kenv-core = { path = "../kenv-core" }
+rpassword = "7"
+zeroize = "1"
 
 [dev-dependencies]
 assert_cmd = "2.0.17"
 predicates = "3.1.3"
+tempfile = "3"

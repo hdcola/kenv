@@ -1,14 +1,22 @@
 use kenv_core::VaultStatus;
+use zeroize::Zeroize;
 
 #[tauri::command]
 fn get_vault_status() -> Result<VaultStatus, String> {
     kenv_core::get_vault_status().map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn create_vault(mut password: String) -> Result<(), String> {
+    let result = kenv_core::create_vault(&password).map_err(|e| e.to_string());
+    password.zeroize();
+    result
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_vault_status])
+        .invoke_handler(tauri::generate_handler![get_vault_status, create_vault])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -16,6 +24,7 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::get_vault_status;
+    use kenv_core::VaultStatus;
     use serde_json::Value;
     use std::fs;
     use std::path::PathBuf;
@@ -27,7 +36,14 @@ mod tests {
     #[test]
     fn command_returns_vault_status_successfully() {
         let status = get_vault_status().expect("command should return vault status");
-        assert_eq!(status.as_script_value(), "missing");
+        assert!(
+            matches!(
+                status,
+                VaultStatus::Missing | VaultStatus::Locked | VaultStatus::Corrupted
+            ),
+            "unexpected status: {}",
+            status.as_script_value()
+        );
     }
 
     #[test]
@@ -74,5 +90,21 @@ mod tests {
             "missing IPC connect-src directive in {}",
             config_path.display()
         );
+    }
+
+    #[test]
+    fn core_create_vault_at_errors_on_duplicate() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("vault.kenv");
+        let params = kenv_core::crypto::KdfParams::recommended();
+
+        kenv_core::create_vault_at(&path, "password", &params).unwrap();
+        let result = kenv_core::create_vault_at(&path, "password", &params);
+
+        assert!(
+            matches!(result, Err(kenv_core::KenvError::VaultAlreadyExists)),
+            "expected VaultAlreadyExists, got {result:?}"
+        );
+        assert!(!result.unwrap_err().to_string().is_empty());
     }
 }
