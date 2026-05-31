@@ -25,6 +25,7 @@ async function handleSubmit() {
     await invoke("create_vault", { password: password.value });
     password.value = "";
     confirm.value = "";
+    loading.value = false;
     emit("vault-created");
   } catch (err) {
     const errMessage = err instanceof Error ? err.message : String(err);
