@@ -7,7 +7,9 @@
   },
   "type": "module",
   "scripts": {
+    "dev:cli": "cargo run -p kenv-cli --",
     "dev:desktop": "pnpm --filter desktop tauri dev",
+    "build:cli": "cargo build -p kenv-cli --release",
     "build:desktop": "pnpm --filter desktop tauri build",
     "build:frontend": "pnpm --filter desktop build",
     "test": "cargo test --workspace && pnpm --filter desktop test",
