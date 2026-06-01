@@ -1899,6 +1899,7 @@ dependencies = [
  "aes-gcm",
  "argon2",
  "dirs 5.0.1",
+ "parking_lot",
  "rand",
  "serde",
  "serde_json",

@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use kenv_core::{create_vault, get_vault_status, KenvError, VaultStatus};
+use kenv_core::{create_vault, get_vault_status, lock, unlock, KenvError, VaultStatus};
 use zeroize::Zeroizing;
 
 #[derive(Debug, Parser)]
@@ -16,6 +16,10 @@ enum Commands {
     Status,
     /// Create a new encrypted vault with a master password.
     Create,
+    /// Unlock the vault with the master password.
+    Unlock,
+    /// Lock the vault.
+    Lock,
 }
 
 fn main() {
@@ -24,6 +28,8 @@ fn main() {
     let result = match cli.command {
         Commands::Status => print_status(),
         Commands::Create => create_new_vault(),
+        Commands::Unlock => unlock_vault(),
+        Commands::Lock => lock_vault(),
     };
 
     if let Err(error) = result {
@@ -47,6 +53,20 @@ fn create_new_vault() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     create_vault(&password)?;
+    println!("vault_status=locked");
+    Ok(())
+}
+
+fn unlock_vault() -> Result<(), Box<dyn std::error::Error>> {
+    let password = Zeroizing::new(rpassword::prompt_password("Vault password: ")?);
+    let status = unlock(&password)?;
+    let output = format!("vault_status={}", status.as_script_value());
+    println!("{output}");
+    Ok(())
+}
+
+fn lock_vault() -> Result<(), Box<dyn std::error::Error>> {
+    lock()?;
     println!("vault_status=locked");
     Ok(())
 }

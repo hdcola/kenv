@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
+use zeroize::Zeroize;
 
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
@@ -17,7 +18,7 @@ pub const NONCE_SIZE: usize = 12;
 pub const CIPHERTEXT_OFFSET: usize = 62;
 pub const MIN_FILE_SIZE: usize = 91;
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Zeroize)]
 pub struct VaultPayload {
     pub version: u32,
 }

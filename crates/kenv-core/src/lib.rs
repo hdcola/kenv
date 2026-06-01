@@ -2,11 +2,12 @@ pub mod crypto;
 pub mod vault;
 
 use crate::crypto::KdfParams;
+use parking_lot::RwLock;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use thiserror::Error;
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -27,6 +28,24 @@ impl VaultStatus {
         }
     }
 }
+
+#[derive(Clone, Default)]
+struct VaultState {
+    payload: Option<vault::VaultPayload>,
+}
+
+impl Drop for VaultState {
+    fn drop(&mut self) {
+        // Explicitly zeroize on drop
+        if let Some(ref mut payload) = self.payload {
+            payload.zeroize();
+        }
+    }
+}
+
+static VAULT_STATE: RwLock<VaultState> = RwLock::new(VaultState {
+    payload: None,
+});
 
 #[derive(Debug, Error)]
 pub enum KenvError {
@@ -85,11 +104,94 @@ pub fn create_vault_at(path: &Path, password: &str, params: &KdfParams) -> Resul
     vault::write_vault_file(path, &salt, &nonce, &ciphertext, params)
 }
 
+pub fn unlock(password: &str) -> Result<VaultStatus, KenvError> {
+    let path = vault::vault_path()?;
+    if !path.exists() {
+        return Err(KenvError::VaultMissing);
+    }
+
+    // Read vault file
+    let data = std::fs::read(&path).map_err(|_| KenvError::FileOperationFailed)?;
+
+    // Validate header structure
+    vault::validate_vault_header(&data)?;
+
+    // Extract header fields
+    let m_cost = u32::from_be_bytes(
+        data[6..10]
+            .try_into()
+            .map_err(|_| KenvError::InvalidVaultFormat)?,
+    );
+    let t_cost = u32::from_be_bytes(
+        data[10..14]
+            .try_into()
+            .map_err(|_| KenvError::InvalidVaultFormat)?,
+    );
+    let p_cost = u32::from_be_bytes(
+        data[14..18]
+            .try_into()
+            .map_err(|_| KenvError::InvalidVaultFormat)?,
+    );
+    let salt = &data[vault::SALT_OFFSET..vault::SALT_OFFSET + vault::SALT_SIZE];
+    let salt_array: [u8; 32] = salt
+        .try_into()
+        .map_err(|_| KenvError::InvalidVaultFormat)?;
+    let nonce = &data[vault::NONCE_OFFSET..vault::NONCE_OFFSET + vault::NONCE_SIZE];
+    let nonce_array: [u8; 12] = nonce
+        .try_into()
+        .map_err(|_| KenvError::InvalidVaultFormat)?;
+
+    let ciphertext = &data[vault::CIPHERTEXT_OFFSET..];
+
+    let params = KdfParams {
+        m_cost,
+        t_cost,
+        p_cost,
+    };
+
+    // Derive key from password
+    let key = Zeroizing::new(
+        crypto::derive_key(password, &salt_array, &params)
+            .map_err(|_| KenvError::EncryptionError)?,
+    );
+
+    // Decrypt payload
+    let plaintext = crypto::decrypt(&*key, &nonce_array, ciphertext)
+        .map_err(|_| KenvError::UnlockFailed)?;
+
+    // Deserialize payload
+    let payload: vault::VaultPayload =
+        serde_json::from_slice(&plaintext).map_err(|_| KenvError::EncryptionError)?;
+
+    // Store in memory and return success
+    {
+        let mut state = VAULT_STATE.write();
+        state.payload = Some(payload);
+    }
+
+    Ok(VaultStatus::Unlocked)
+}
+
+pub fn lock() -> Result<(), KenvError> {
+    let mut state = VAULT_STATE.write();
+    *state = VaultState::default();
+    Ok(())
+}
+
 pub fn get_vault_status() -> Result<VaultStatus, KenvError> {
     let path = vault::vault_path()?;
     if !path.exists() {
         return Ok(VaultStatus::Missing);
     }
+
+    // Check if vault is in-memory unlocked
+    {
+        let state = VAULT_STATE.read();
+        if state.payload.is_some() {
+            return Ok(VaultStatus::Unlocked);
+        }
+    }
+
     let data = std::fs::read(&path).map_err(|_| KenvError::FileOperationFailed)?;
     match vault::validate_vault_header(&data) {
         // Header is structurally valid. Ciphertext integrity cannot be verified

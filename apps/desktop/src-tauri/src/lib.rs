@@ -13,10 +13,27 @@ fn create_vault(mut password: String) -> Result<(), String> {
     result
 }
 
+#[tauri::command]
+fn unlock(mut password: String) -> Result<VaultStatus, String> {
+    let result = kenv_core::unlock(&password).map_err(|e| e.to_string());
+    password.zeroize();
+    result
+}
+
+#[tauri::command]
+fn lock() -> Result<(), String> {
+    kenv_core::lock().map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_vault_status, create_vault])
+        .invoke_handler(tauri::generate_handler![
+            get_vault_status,
+            create_vault,
+            unlock,
+            lock
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
