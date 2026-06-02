@@ -1,5 +1,8 @@
 use clap::{Parser, Subcommand};
-use kenv_core::{create_vault, get_vault_status, lock, unlock, KenvError, VaultStatus};
+use kenv_core::{
+    create_vault, get_vault_status, list_slots, list_ssh_keys, lock, remove_slot, sign_ssh_key,
+    unlock, KenvError, VaultStatus,
+};
 use zeroize::Zeroizing;
 
 #[derive(Debug, Parser)]
@@ -20,6 +23,20 @@ enum Commands {
     Unlock,
     /// Lock the vault.
     Lock,
+    /// List all unlock slots with metadata.
+    Slots,
+    /// Remove an unlock slot (requires interactive confirmation).
+    RemoveSlot {
+        /// Slot ID to remove
+        slot_id: u8,
+    },
+    /// List all SSH keys stored in vault.
+    Keys,
+    /// Sign data with an SSH key (requires reauthentication if key requires it).
+    Sign {
+        /// SSH key ID to use for signing
+        key_id: String,
+    },
 }
 
 fn main() {
@@ -30,6 +47,10 @@ fn main() {
         Commands::Create => create_new_vault(),
         Commands::Unlock => unlock_vault(),
         Commands::Lock => lock_vault(),
+        Commands::Slots => print_slots(),
+        Commands::RemoveSlot { slot_id } => remove_unlock_slot(slot_id),
+        Commands::Keys => print_ssh_keys(),
+        Commands::Sign { key_id } => sign_with_key(&key_id),
     };
 
     if let Err(error) = result {
@@ -69,6 +90,77 @@ fn lock_vault() -> Result<(), Box<dyn std::error::Error>> {
     lock()?;
     println!("vault_status=locked");
     Ok(())
+}
+
+fn print_slots() -> Result<(), Box<dyn std::error::Error>> {
+    let slots = list_slots()?;
+    println!("slot_count={}", slots.len());
+    for slot in slots {
+        println!(
+            "slot_id={} type={:?} label={}",
+            slot.slot_id, slot.slot_type, slot.label
+        );
+    }
+    Ok(())
+}
+
+fn remove_unlock_slot(slot_id: u8) -> Result<(), Box<dyn std::error::Error>> {
+    match remove_slot(slot_id) {
+        Ok(()) => {
+            println!("slot_removed=true");
+            Ok(())
+        }
+        Err(KenvError::UnlockFailed) => {
+            // HIGH-RISK operation detected, request reauthentication
+            eprintln!("Removing this slot requires password reauthentication");
+            let password =
+                Zeroizing::new(rpassword::prompt_password("Vault password: ")?);
+            kenv_core::reauth_password(&password)?;
+            remove_slot(slot_id)?;
+            println!("slot_removed=true");
+            Ok(())
+        }
+        Err(e) => Err(Box::new(e)),
+    }
+}
+
+fn print_ssh_keys() -> Result<(), Box<dyn std::error::Error>> {
+    let keys = list_ssh_keys()?;
+    println!("key_count={}", keys.len());
+    for key in keys {
+        println!(
+            "key_id={} name={} type={}",
+            key.key_id, key.name, key.key_type.as_str()
+        );
+    }
+    Ok(())
+}
+
+fn sign_with_key(key_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+    // Read data to sign from stdin
+    use std::io::Read;
+    let mut data = Vec::new();
+    std::io::stdin().read_to_end(&mut data)?;
+
+    match sign_ssh_key(key_id, &data) {
+        Ok(signature) => {
+            println!("key_id={}", signature.key_id);
+            println!("signature_len={}", signature.signature.len());
+            Ok(())
+        }
+        Err(KenvError::UnlockFailed) => {
+            // Reauthentication required
+            eprintln!("This SSH key requires password reauthentication");
+            let password =
+                Zeroizing::new(rpassword::prompt_password("Vault password: ")?);
+            kenv_core::reauth_password(&password)?;
+            let signature = sign_ssh_key(key_id, &data)?;
+            println!("key_id={}", signature.key_id);
+            println!("signature_len={}", signature.signature.len());
+            Ok(())
+        }
+        Err(e) => Err(Box::new(e)),
+    }
 }
 
 fn render_status<F>(status_provider: F) -> Result<String, KenvError>

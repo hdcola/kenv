@@ -1,4 +1,6 @@
-use crate::{crypto::KdfParams, KenvError};
+pub mod tlv;
+
+use crate::{crypto::KdfParams, KenvError, slots, ssh};
 use serde::{Deserialize, Serialize};
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -9,7 +11,10 @@ use zeroize::Zeroize;
 use std::os::unix::fs::OpenOptionsExt;
 
 pub const MAGIC: &[u8; 4] = b"KENV";
-pub const FILE_VERSION: u8 = 1;
+pub const FILE_VERSION_V1: u8 = 1;
+pub const FILE_VERSION_V2: u8 = 2;
+
+// V1 format constants
 pub const KDF_ID_ARGON2ID: u8 = 1;
 pub const SALT_OFFSET: usize = 18;
 pub const SALT_SIZE: usize = 32;
@@ -18,14 +23,52 @@ pub const NONCE_SIZE: usize = 12;
 pub const CIPHERTEXT_OFFSET: usize = 62;
 pub const MIN_FILE_SIZE: usize = 91;
 
-#[derive(Clone, Debug, Deserialize, Serialize, Zeroize)]
+// V2 format header constants
+pub const V2_HEADER_SIZE: usize = 62; // Same header as V1, followed by slots
+pub const V2_SLOTS_OFFSET: usize = 62;
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct VaultPayload {
     pub version: u32,
+    pub slots: Vec<slots::UnlockSlot>,
+    pub ssh_keys: Vec<ssh::SshKey>,
 }
 
 impl VaultPayload {
     pub fn new() -> Self {
-        Self { version: 1 }
+        Self {
+            version: 1,
+            slots: Vec::new(),
+            ssh_keys: Vec::new(),
+        }
+    }
+}
+
+impl Zeroize for VaultPayload {
+    fn zeroize(&mut self) {
+        // Zeroize the slots
+        for slot in &mut self.slots {
+            // Zeroize sensitive data in each slot
+            if let Some(ref mut pwd_data) = slot.password {
+                pwd_data.salt.zeroize();
+                pwd_data.nonce.zeroize();
+                pwd_data.encrypted_dek.zeroize();
+                pwd_data.tag.zeroize();
+            }
+            if let Some(ref mut ctap2_data) = slot.ctap2 {
+                ctap2_data.challenge.zeroize();
+                ctap2_data.nonce.zeroize();
+                ctap2_data.encrypted_dek.zeroize();
+                ctap2_data.tag.zeroize();
+            }
+            if let Some(ref mut touchid_data) = slot.touchid {
+                touchid_data.keychain_ref.zeroize();
+                touchid_data.nonce.zeroize();
+                touchid_data.encrypted_dek.zeroize();
+                touchid_data.tag.zeroize();
+            }
+        }
+        self.slots.clear();
     }
 }
 
@@ -43,7 +86,7 @@ pub fn write_vault_file(
 ) -> Result<(), KenvError> {
     let mut buf = Vec::with_capacity(CIPHERTEXT_OFFSET + ciphertext.len());
     buf.extend_from_slice(MAGIC);
-    buf.push(FILE_VERSION);
+    buf.push(FILE_VERSION_V1);
     buf.push(KDF_ID_ARGON2ID);
     buf.extend_from_slice(&params.m_cost.to_be_bytes());
     buf.extend_from_slice(&params.t_cost.to_be_bytes());
@@ -89,17 +132,21 @@ pub fn write_vault_file(
     Ok(())
 }
 
-pub fn validate_vault_header(data: &[u8]) -> Result<(), KenvError> {
+pub fn validate_vault_header(data: &[u8]) -> Result<u8, KenvError> {
     if data.len() < MIN_FILE_SIZE {
         return Err(KenvError::InvalidVaultFormat);
     }
     if &data[0..4] != MAGIC.as_slice() {
         return Err(KenvError::InvalidVaultFormat);
     }
-    if data[4] != FILE_VERSION {
+
+    let version = data[4];
+    if version != FILE_VERSION_V1 && version != FILE_VERSION_V2 {
         return Err(KenvError::InvalidVaultFormat);
     }
-    if data[5] != KDF_ID_ARGON2ID {
+
+    // V2 uses same header as V1, so check KDF ID only for V1
+    if version == FILE_VERSION_V1 && data[5] != KDF_ID_ARGON2ID {
         return Err(KenvError::InvalidVaultFormat);
     }
 
@@ -133,5 +180,5 @@ pub fn validate_vault_header(data: &[u8]) -> Result<(), KenvError> {
         return Err(KenvError::InvalidVaultFormat);
     }
 
-    Ok(())
+    Ok(version)
 }

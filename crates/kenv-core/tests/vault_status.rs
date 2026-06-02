@@ -34,7 +34,7 @@ fn returns_corrupted_when_vault_file_has_invalid_content() {
     let status = get_vault_status_with(|| {
         let data = std::fs::read(&path).map_err(|_| KenvError::FileOperationFailed)?;
         match kenv_core::vault::validate_vault_header(&data) {
-            Ok(()) => Ok(VaultStatus::Locked),
+            Ok(_version) => Ok(VaultStatus::Locked),
             Err(_) => Ok(VaultStatus::Corrupted),
         }
     })
@@ -59,7 +59,7 @@ fn returns_corrupted_when_header_valid_but_kdf_params_zero() {
     let status = get_vault_status_with(|| {
         let data = std::fs::read(&path).map_err(|_| KenvError::FileOperationFailed)?;
         match kenv_core::vault::validate_vault_header(&data) {
-            Ok(()) => Ok(VaultStatus::Locked),
+            Ok(_version) => Ok(VaultStatus::Locked),
             Err(_) => Ok(VaultStatus::Corrupted),
         }
     })
@@ -88,7 +88,7 @@ fn returns_corrupted_when_salt_is_all_zeros() {
     let status = get_vault_status_with(|| {
         let data = std::fs::read(&path).map_err(|_| KenvError::FileOperationFailed)?;
         match kenv_core::vault::validate_vault_header(&data) {
-            Ok(()) => Ok(VaultStatus::Locked),
+            Ok(_version) => Ok(VaultStatus::Locked),
             Err(_) => Ok(VaultStatus::Corrupted),
         }
     })
@@ -119,7 +119,7 @@ fn returns_corrupted_when_nonce_is_all_zeros() {
     let status = get_vault_status_with(|| {
         let data = std::fs::read(&path).map_err(|_| KenvError::FileOperationFailed)?;
         match kenv_core::vault::validate_vault_header(&data) {
-            Ok(()) => Ok(VaultStatus::Locked),
+            Ok(_version) => Ok(VaultStatus::Locked),
             Err(_) => Ok(VaultStatus::Corrupted),
         }
     })
@@ -158,7 +158,7 @@ fn returns_locked_when_header_valid_and_ciphertext_is_garbage() {
     let status = get_vault_status_with(|| {
         let data = std::fs::read(&path).map_err(|_| KenvError::FileOperationFailed)?;
         match kenv_core::vault::validate_vault_header(&data) {
-            Ok(()) => Ok(VaultStatus::Locked),
+            Ok(_version) => Ok(VaultStatus::Locked),
             Err(_) => Ok(VaultStatus::Corrupted),
         }
     })
