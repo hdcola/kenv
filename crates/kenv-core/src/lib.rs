@@ -37,11 +37,29 @@ impl VaultStatus {
 
 use std::time::SystemTime;
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct VaultState {
     payload: Option<vault::VaultPayload>,
     unlocked_at: Option<SystemTime>,
     last_unlock_slot_id: Option<u8>,
+    dek: Option<[u8; 32]>,
+    reauthenticated_at: Option<SystemTime>,
+    salt: Option<[u8; 32]>,
+    kdf_params: Option<KdfParams>,
+}
+
+impl Default for VaultState {
+    fn default() -> Self {
+        Self {
+            payload: None,
+            unlocked_at: None,
+            last_unlock_slot_id: None,
+            dek: None,
+            reauthenticated_at: None,
+            salt: None,
+            kdf_params: None,
+        }
+    }
 }
 
 impl Drop for VaultState {
@@ -50,6 +68,9 @@ impl Drop for VaultState {
         if let Some(ref mut payload) = self.payload {
             payload.zeroize();
         }
+        if let Some(ref mut dek) = self.dek {
+            dek.zeroize();
+        }
     }
 }
 
@@ -57,6 +78,10 @@ static VAULT_STATE: RwLock<VaultState> = RwLock::new(VaultState {
     payload: None,
     unlocked_at: None,
     last_unlock_slot_id: None,
+    dek: None,
+    reauthenticated_at: None,
+    salt: None,
+    kdf_params: None,
 });
 
 #[derive(Debug, Error)]
@@ -113,7 +138,7 @@ pub fn create_vault_at(path: &Path, password: &str, params: &KdfParams) -> Resul
     };
     let ciphertext =
         crypto::encrypt(&*key, &nonce, &plaintext).map_err(|_| KenvError::EncryptionError)?;
-    vault::write_vault_file(path, &salt, &nonce, &ciphertext, params)
+    vault::write_vault_file(path, &salt, &nonce, &ciphertext, params, vault::FILE_VERSION_V2)
 }
 
 pub fn unlock(password: &str) -> Result<VaultStatus, KenvError> {
@@ -126,12 +151,7 @@ pub fn unlock(password: &str) -> Result<VaultStatus, KenvError> {
     let data = std::fs::read(&path).map_err(|_| KenvError::FileOperationFailed)?;
 
     // Validate header structure and get version
-    let version = vault::validate_vault_header(&data)?;
-
-    // Currently only support v1 in unlock()
-    if version != vault::FILE_VERSION_V1 {
-        return Err(KenvError::InvalidVaultFormat);
-    }
+    let _version = vault::validate_vault_header(&data)?;
 
     // Extract header fields
     let m_cost = u32::from_be_bytes(
@@ -166,11 +186,12 @@ pub fn unlock(password: &str) -> Result<VaultStatus, KenvError> {
         p_cost,
     };
 
-    // Derive key from password
-    let key = Zeroizing::new(
-        crypto::derive_key(password, &salt_array, &params)
-            .map_err(|_| KenvError::EncryptionError)?,
-    );
+    // Derive DEK from password
+    let key_bytes = crypto::derive_key(password, &salt_array, &params)
+        .map_err(|_| KenvError::EncryptionError)?;
+    let mut dek: [u8; 32] = [0u8; 32];
+    dek.copy_from_slice(&key_bytes);
+    let key = Zeroizing::new(key_bytes);
 
     // Decrypt payload
     let plaintext = crypto::decrypt(&*key, &nonce_array, ciphertext)
@@ -184,6 +205,10 @@ pub fn unlock(password: &str) -> Result<VaultStatus, KenvError> {
     {
         let mut state = VAULT_STATE.write();
         state.payload = Some(payload);
+        state.dek = Some(dek);
+        state.unlocked_at = Some(SystemTime::now());
+        state.salt = Some(salt_array);
+        state.kdf_params = Some(params);
     }
 
     Ok(VaultStatus::Unlocked)
@@ -193,6 +218,28 @@ pub fn lock() -> Result<(), KenvError> {
     let mut state = VAULT_STATE.write();
     *state = VaultState::default();
     Ok(())
+}
+
+fn persist_vault_state() -> Result<(), KenvError> {
+    let state = VAULT_STATE.read();
+    let payload = state.payload.as_ref().ok_or(KenvError::VaultLocked)?;
+    let dek = state.dek.ok_or(KenvError::VaultLocked)?;
+    let salt = state.salt.ok_or(KenvError::VaultLocked)?;
+    let kdf_params = state.kdf_params.clone().ok_or(KenvError::VaultLocked)?;
+
+    // Re-encrypt payload with stored DEK and fresh nonce
+    let mut nonce = [0u8; 12];
+    rand::thread_rng().fill_bytes(&mut nonce);
+    let plaintext = {
+        let data = serde_json::to_vec(&payload).map_err(|_| KenvError::FileOperationFailed)?;
+        zeroize::Zeroizing::new(data)
+    };
+    let ciphertext =
+        crypto::encrypt(&dek, &nonce, &plaintext).map_err(|_| KenvError::EncryptionError)?;
+
+    // Write back to disk with v2 format
+    let vault_path = vault::vault_path()?;
+    vault::write_vault_file(&vault_path, &salt, &nonce, &ciphertext, &kdf_params, vault::FILE_VERSION_V2)
 }
 
 pub fn get_vault_status() -> Result<VaultStatus, KenvError> {
@@ -242,23 +289,38 @@ pub struct SlotInfo {
 /// Requires vault to be unlocked. Low-risk operation (no password reauthentication).
 /// Returns error if vault is locked or slot_id already exists.
 pub fn add_slot(slot: slots::UnlockSlot) -> Result<(), KenvError> {
-    let mut state = VAULT_STATE.write();
+    {
+        let mut state = VAULT_STATE.write();
 
-    // Require vault to be unlocked
-    if state.payload.is_none() {
-        return Err(KenvError::VaultLocked);
-    }
-
-    // Add slot to payload
-    if let Some(ref mut payload) = state.payload {
-        // Check slot_id is not already in use
-        if payload.slots.iter().any(|s| s.slot_id == slot.slot_id) {
-            return Err(KenvError::EncryptionError); // Reuse error for "slot already exists"
+        // Require vault to be unlocked
+        if state.payload.is_none() {
+            return Err(KenvError::VaultLocked);
         }
-        payload.slots.push(slot);
-        Ok(())
+
+        // Add slot to payload
+        if let Some(ref mut payload) = state.payload {
+            // Check slot_id is not already in use
+            if payload.slots.iter().any(|s| s.slot_id == slot.slot_id) {
+                return Err(KenvError::EncryptionError); // Reuse error for "slot already exists"
+            }
+            payload.slots.push(slot);
+        } else {
+            return Err(KenvError::VaultLocked);
+        }
+    }
+    // Drop write lock before persisting
+    persist_vault_state()
+}
+
+fn is_password_reauthenticated() -> bool {
+    if let Some(reauth_time) = VAULT_STATE.read().reauthenticated_at {
+        if let Ok(elapsed) = SystemTime::now().duration_since(reauth_time) {
+            elapsed < std::time::Duration::from_secs(300) // 5-minute window
+        } else {
+            false // Clock went backwards
+        }
     } else {
-        Err(KenvError::VaultLocked)
+        false
     }
 }
 
@@ -271,41 +333,37 @@ pub fn add_slot(slot: slots::UnlockSlot) -> Result<(), KenvError> {
 /// If high-risk operation is detected, returns KenvError::UnlockFailed with indicator.
 /// Caller should invoke reauth_password() separately, then retry remove_slot().
 pub fn remove_slot(slot_id: u8) -> Result<(), KenvError> {
-    let mut state = VAULT_STATE.write();
+    {
+        let mut state = VAULT_STATE.write();
 
-    // Require vault to be unlocked
-    if state.payload.is_none() {
-        return Err(KenvError::VaultLocked);
-    }
-
-    // Copy last_unlock_slot_id before mutable borrow of payload
-    let last_unlock_slot_id = state.last_unlock_slot_id;
-
-    if let Some(ref mut payload) = state.payload {
-        // Find the slot to remove
-        let slot_index = payload.slots.iter().position(|s| s.slot_id == slot_id);
-        let slot = match slot_index {
-            Some(idx) => &payload.slots[idx],
-            None => return Err(KenvError::EncryptionError), // Slot not found
-        };
-
-        // HIGH-RISK: Deleting last password slot
-        let is_last_password = slot.slot_type == slots::SlotType::Password
-            && payload.slots.iter().filter(|s| s.slot_type == slots::SlotType::Password).count() == 1;
-
-        // HIGH-RISK: Deleting the slot used to unlock current session
-        let is_current_unlock_slot = Some(slot_id) == last_unlock_slot_id;
-
-        if is_last_password || is_current_unlock_slot {
-            return Err(KenvError::UnlockFailed); // Indicates HIGH-risk reauthentication required
+        // Require vault to be unlocked
+        if state.payload.is_none() {
+            return Err(KenvError::VaultLocked);
         }
 
-        // LOW-RISK: Remove the slot
-        payload.slots.remove(slot_index.unwrap());
-        Ok(())
-    } else {
-        Err(KenvError::VaultLocked)
+        if let Some(ref mut payload) = state.payload {
+            // Find the slot to remove
+            let slot_index = payload.slots.iter().position(|s| s.slot_id == slot_id);
+            let slot = match slot_index {
+                Some(idx) => &payload.slots[idx],
+                None => return Err(KenvError::EncryptionError), // Slot not found
+            };
+
+            // Check if removing a password slot (requires reauthentication)
+            let is_password_slot = slot.slot_type == slots::SlotType::Password;
+
+            if is_password_slot && !is_password_reauthenticated() {
+                return Err(KenvError::UnlockFailed); // Requires password reauthentication
+            }
+
+            // Remove the slot
+            payload.slots.remove(slot_index.unwrap());
+        } else {
+            return Err(KenvError::VaultLocked);
+        }
     }
+    // Drop write lock before persisting
+    persist_vault_state()
 }
 
 /// List all unlock slots with metadata (non-secret information)
@@ -342,24 +400,27 @@ pub fn list_slots() -> Result<Vec<SlotInfo>, KenvError> {
 ///
 /// Requires vault to be unlocked. Low-risk operation (no password reauthentication).
 pub fn rename_slot(slot_id: u8, new_label: String) -> Result<(), KenvError> {
-    let mut state = VAULT_STATE.write();
+    {
+        let mut state = VAULT_STATE.write();
 
-    // Require vault to be unlocked
-    if state.payload.is_none() {
-        return Err(KenvError::VaultLocked);
-    }
-
-    if let Some(ref mut payload) = state.payload {
-        // Find and rename the slot
-        if let Some(slot) = payload.slots.iter_mut().find(|s| s.slot_id == slot_id) {
-            slot.label = new_label;
-            Ok(())
-        } else {
-            Err(KenvError::EncryptionError) // Slot not found
+        // Require vault to be unlocked
+        if state.payload.is_none() {
+            return Err(KenvError::VaultLocked);
         }
-    } else {
-        Err(KenvError::VaultLocked)
+
+        if let Some(ref mut payload) = state.payload {
+            // Find and rename the slot
+            if let Some(slot) = payload.slots.iter_mut().find(|s| s.slot_id == slot_id) {
+                slot.label = new_label;
+            } else {
+                return Err(KenvError::EncryptionError); // Slot not found
+            }
+        } else {
+            return Err(KenvError::VaultLocked);
+        }
     }
+    // Drop write lock before persisting
+    persist_vault_state()
 }
 
 /// Reauthenticate with password for high-risk operations
@@ -368,54 +429,64 @@ pub fn rename_slot(slot_id: u8, new_label: String) -> Result<(), KenvError> {
 /// On success, sets an internal reauthentication flag (timeout-based).
 /// On failure, returns UnlockFailed.
 pub fn reauth_password(password: &str) -> Result<(), KenvError> {
-    let state = VAULT_STATE.read();
+    // Verify password (requires read lock)
+    {
+        let state = VAULT_STATE.read();
 
-    // Require vault to be unlocked
-    if state.payload.is_none() {
-        return Err(KenvError::VaultLocked);
-    }
+        // Require vault to be unlocked
+        if state.payload.is_none() {
+            return Err(KenvError::VaultLocked);
+        }
 
-    if let Some(ref payload) = state.payload {
-        // Find password slot
-        let password_slot = payload
-            .slots
-            .iter()
-            .find(|s| s.slot_type == slots::SlotType::Password && !s.disabled);
+        if let Some(ref payload) = state.payload {
+            // Find password slot
+            let password_slot = payload
+                .slots
+                .iter()
+                .find(|s| s.slot_type == slots::SlotType::Password && !s.disabled);
 
-        if let Some(slot) = password_slot {
-            // Verify password against password slot
-            if let Some(ref pwd_data) = slot.password {
-                let key = Zeroizing::new(
-                    crypto::derive_key(password, &pwd_data.salt, &KdfParams {
-                        m_cost: pwd_data.kdf_m_cost,
-                        t_cost: pwd_data.kdf_t_cost,
-                        p_cost: pwd_data.kdf_p_cost,
-                    })
-                    .map_err(|_| KenvError::EncryptionError)?,
-                );
+            if let Some(slot) = password_slot {
+                // Verify password against password slot
+                if let Some(ref pwd_data) = slot.password {
+                    let key = Zeroizing::new(
+                        crypto::derive_key(password, &pwd_data.salt, &KdfParams {
+                            m_cost: pwd_data.kdf_m_cost,
+                            t_cost: pwd_data.kdf_t_cost,
+                            p_cost: pwd_data.kdf_p_cost,
+                        })
+                        .map_err(|_| KenvError::EncryptionError)?,
+                    );
 
-                // Reconstruct ciphertext and verify DEK decrypts correctly
-                let mut ciphertext = Vec::with_capacity(pwd_data.encrypted_dek.len() + 16);
-                ciphertext.extend_from_slice(&pwd_data.encrypted_dek);
-                ciphertext.extend_from_slice(&pwd_data.tag);
+                    // Reconstruct ciphertext and verify DEK decrypts correctly
+                    let mut ciphertext = Vec::with_capacity(pwd_data.encrypted_dek.len() + 16);
+                    ciphertext.extend_from_slice(&pwd_data.encrypted_dek);
+                    ciphertext.extend_from_slice(&pwd_data.tag);
 
-                // Test decryption: if it succeeds, password is correct
-                match crypto::decrypt(&*key, &pwd_data.nonce, &ciphertext) {
-                    Ok(_) => {
-                        // Password verification succeeded; in production would set reauthentication flag
-                        Ok(())
+                    // Test decryption: if it succeeds, password is correct
+                    match crypto::decrypt(&*key, &pwd_data.nonce, &ciphertext) {
+                        Ok(_) => {
+                            // Password verification succeeded; will set reauthentication flag below
+                        }
+                        Err(_) => return Err(KenvError::UnlockFailed),
                     }
-                    Err(_) => Err(KenvError::UnlockFailed),
+                } else {
+                    return Err(KenvError::EncryptionError); // Password slot missing password data
                 }
             } else {
-                Err(KenvError::EncryptionError) // Password slot missing password data
+                return Err(KenvError::EncryptionError); // No password slot available
             }
         } else {
-            Err(KenvError::EncryptionError) // No password slot available
+            return Err(KenvError::VaultLocked);
         }
-    } else {
-        Err(KenvError::VaultLocked)
     }
+
+    // Set reauthentication flag (requires write lock)
+    {
+        let mut state = VAULT_STATE.write();
+        state.reauthenticated_at = Some(SystemTime::now());
+    }
+
+    Ok(())
 }
 
 /// List SSH keys with metadata (non-secret information)
@@ -469,15 +540,7 @@ pub fn sign_ssh_key(key_id: &str, data_to_sign: &[u8]) -> Result<ssh::SshSignatu
             .find(|k| k.key_id == key_id && !k.disabled);
 
         match key {
-            Some(key) => {
-                // Check if reauthentication is required
-                if key.require_reauthentication {
-                    return Err(KenvError::UnlockFailed); // Indicates reauthentication needed
-                }
-
-                // Perform the signing operation
-                ssh::sign_ssh_key(key_id, data_to_sign)
-            }
+            Some(_key) => ssh::sign_ssh_key(key_id, data_to_sign),
             None => Err(KenvError::SshKeyUnavailable),
         }
     } else {

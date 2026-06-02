@@ -83,10 +83,11 @@ pub fn write_vault_file(
     nonce: &[u8; 12],
     ciphertext: &[u8],
     params: &KdfParams,
+    version: u8,
 ) -> Result<(), KenvError> {
     let mut buf = Vec::with_capacity(CIPHERTEXT_OFFSET + ciphertext.len());
     buf.extend_from_slice(MAGIC);
-    buf.push(FILE_VERSION_V1);
+    buf.push(version);
     buf.push(KDF_ID_ARGON2ID);
     buf.extend_from_slice(&params.m_cost.to_be_bytes());
     buf.extend_from_slice(&params.t_cost.to_be_bytes());

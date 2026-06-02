@@ -47,16 +47,21 @@ pub struct SshSignature {
 
 /// Sign data with SSH key
 ///
-/// If the key requires reauthentication (`require_reauthentication=true`),
-/// returns KenvError::UnlockFailed to indicate reauthentication is needed.
-/// Caller should invoke reauth_password() separately, then retry sign_ssh_key().
+/// **Not yet implemented**: This is a test-only stub.
+/// Returns PlatformCapabilityUnavailable in production.
+///
+/// To implement SSH signing, the following is required:
+/// 1. OpenSSH private key parsing (RFC 4251 wire format or OpenSSH format)
+/// 2. Per-key-type signing implementations:
+///    - Ed25519: ed25519-dalek
+///    - RSA: rsa crate
+///    - ECDSA P-256: ecdsa crate
+/// 3. Private key decryption after vault unlock (use stored DEK)
+/// 4. Signature generation matching OpenSSH format
 pub fn sign_ssh_key(
     _key_id: &str,
     _data_to_sign: &[u8],
 ) -> Result<SshSignature, KenvError> {
-    // TODO: Implement actual SSH signing with libsodium or similar
-    // For now, return stub implementation
-
     #[cfg(test)]
     {
         Ok(SshSignature {
