@@ -100,6 +100,8 @@ pub enum KenvError {
     SshKeyUnavailable,
     #[error("platform capability is unavailable")]
     PlatformCapabilityUnavailable,
+    #[error("ssh key signing is not yet implemented")]
+    SshSigningNotImplemented,
     #[error("file operation failed")]
     FileOperationFailed,
     #[error("vault already exists")]
@@ -117,6 +119,34 @@ pub fn create_vault(password: &str) -> Result<(), KenvError> {
     create_vault_at(&path, password, &KdfParams::recommended())
 }
 
+/// Create a password unlock slot with DEK wrapping
+fn create_password_slot(
+    password: &str,
+    slot_id: u8,
+    label: String,
+    params: &KdfParams,
+) -> Result<slots::UnlockSlot, KenvError> {
+    let mut dek = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut dek);
+
+    let password_data = slots::password::wrap_dek(password, &dek, params)?;
+
+    Ok(slots::UnlockSlot {
+        slot_id,
+        slot_type: slots::SlotType::Password,
+        label,
+        created_at: std::time::SystemTime::now(),
+        password: Some(password_data),
+        ctap2: None,
+        touchid: None,
+        requires_pin: false,
+        requires_touch: false,
+        pin_attempts_left: None,
+        last_used: None,
+        disabled: false,
+    })
+}
+
 pub fn create_vault_at(path: &Path, password: &str, params: &KdfParams) -> Result<(), KenvError> {
     if password.trim().is_empty() {
         return Err(KenvError::WeakPassword);
@@ -131,7 +161,15 @@ pub fn create_vault_at(path: &Path, password: &str, params: &KdfParams) -> Resul
     let key = Zeroizing::new(
         crypto::derive_key(password, &salt, params).map_err(|_| KenvError::EncryptionError)?,
     );
-    let payload = vault::VaultPayload::new();
+
+    // Generate DEK and create initial password slot
+    let mut dek = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut dek);
+    let password_slot = create_password_slot(password, 1, "password".to_string(), params)?;
+
+    let mut payload = vault::VaultPayload::new();
+    payload.slots.push(password_slot);
+
     let plaintext = {
         let data = serde_json::to_vec(&payload).map_err(|_| KenvError::FileOperationFailed)?;
         zeroize::Zeroizing::new(data)

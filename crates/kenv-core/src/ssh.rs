@@ -48,7 +48,7 @@ pub struct SshSignature {
 /// Sign data with SSH key
 ///
 /// **Not yet implemented**: This is a test-only stub.
-/// Returns PlatformCapabilityUnavailable in production.
+/// Returns SshSigningNotImplemented in production.
 ///
 /// To implement SSH signing, the following is required:
 /// 1. OpenSSH private key parsing (RFC 4251 wire format or OpenSSH format)
@@ -73,7 +73,7 @@ pub fn sign_ssh_key(
 
     #[cfg(not(test))]
     {
-        Err(KenvError::PlatformCapabilityUnavailable)
+        Err(KenvError::SshSigningNotImplemented)
     }
 }
 
