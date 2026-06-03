@@ -1,3 +1,6 @@
+mod handlers;
+mod socket_server;
+
 use kenv_core::{SlotInfo, SshSignature, SshKeyInfo, VaultStatus};
 use zeroize::Zeroize;
 
@@ -67,6 +70,8 @@ fn sign_with_ssh_key(key_id: String, data: Vec<u8>) -> Result<SshSignature, Stri
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    socket_server::start_socket_server();
+
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             get_vault_status,
