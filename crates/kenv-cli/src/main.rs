@@ -1,3 +1,5 @@
+mod ipc;
+
 use clap::{Parser, Subcommand};
 use kenv_core::{
     create_vault, get_vault_status, list_slots, list_ssh_keys, lock, remove_slot, sign_ssh_key,
@@ -80,60 +82,123 @@ fn create_new_vault() -> Result<(), Box<dyn std::error::Error>> {
 
 fn unlock_vault() -> Result<(), Box<dyn std::error::Error>> {
     let password = Zeroizing::new(rpassword::prompt_password("Vault password: ")?);
-    let status = unlock(&password)?;
-    let output = format!("vault_status={}", status.as_script_value());
-    println!("{output}");
-    Ok(())
+
+    // Try IPC first; fall back to local unlock if desktop not running
+    let unlock_result = ipc::IpcClient::unlock(&password).or_else(|_| {
+        // Fallback to local unlock
+        unlock(&password).map(|_| ()).map_err(|e| e.to_string())
+    });
+
+    match unlock_result {
+        Ok(_) => {
+            println!("vault_status=unlocked");
+            Ok(())
+        }
+        Err(e) => Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            e,
+        ))),
+    }
 }
 
 fn lock_vault() -> Result<(), Box<dyn std::error::Error>> {
-    lock()?;
-    println!("vault_status=locked");
-    Ok(())
+    // Try IPC first; fall back to local lock if desktop not running
+    let lock_result = ipc::IpcClient::lock().or_else(|_| {
+        lock().map_err(|e| e.to_string())
+    });
+
+    match lock_result {
+        Ok(_) => {
+            println!("vault_status=locked");
+            Ok(())
+        }
+        Err(e) => Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            e,
+        ))),
+    }
 }
 
 fn print_slots() -> Result<(), Box<dyn std::error::Error>> {
-    let slots = list_slots()?;
-    println!("slot_count={}", slots.len());
-    for slot in slots {
-        println!(
-            "slot_id={} type={:?} label={}",
-            slot.slot_id, slot.slot_type, slot.label
-        );
+    match ipc::IpcClient::list_slots() {
+        Ok(slots) => {
+            println!("slot_count={}", slots.len());
+            for slot in slots {
+                println!(
+                    "slot_id={} type={} label={}",
+                    slot.slot_id, slot.slot_type, slot.label
+                );
+            }
+            Ok(())
+        }
+        Err(e) => {
+            if e.contains("not running") {
+                eprintln!("Error: desktop app not running");
+                eprintln!("Hint: Start the desktop app to use this command");
+            } else {
+                eprintln!("Error: {}", e);
+            }
+            Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e,
+            )))
+        }
     }
-    Ok(())
 }
 
 fn remove_unlock_slot(slot_id: u8) -> Result<(), Box<dyn std::error::Error>> {
-    match remove_slot(slot_id) {
+    match ipc::IpcClient::remove_slot(slot_id) {
         Ok(()) => {
             println!("slot_removed=true");
             Ok(())
         }
-        Err(KenvError::UnlockFailed) => {
+        Err(e) if e.contains("reauthentication_required") => {
             // HIGH-RISK operation detected, request reauthentication
             eprintln!("Removing this slot requires password reauthentication");
             let password =
                 Zeroizing::new(rpassword::prompt_password("Vault password: ")?);
-            kenv_core::reauth_password(&password)?;
-            remove_slot(slot_id)?;
+            ipc::IpcClient::reauth_password(&password)?;
+            ipc::IpcClient::remove_slot(slot_id)?;
             println!("slot_removed=true");
             Ok(())
         }
-        Err(e) => Err(Box::new(e)),
+        Err(e) => {
+            if e.contains("not running") {
+                eprintln!("Error: desktop app not running");
+                eprintln!("Hint: Start the desktop app to use this command");
+            } else {
+                eprintln!("Error: {}", e);
+            }
+            Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e,
+            )))
+        }
     }
 }
 
 fn print_ssh_keys() -> Result<(), Box<dyn std::error::Error>> {
-    let keys = list_ssh_keys()?;
-    println!("key_count={}", keys.len());
-    for key in keys {
-        println!(
-            "key_id={} name={} type={}",
-            key.key_id, key.name, key.key_type.as_str()
-        );
+    match ipc::IpcClient::list_keys() {
+        Ok(keys) => {
+            println!("key_count={}", keys.len());
+            for key in keys {
+                println!("key_id={} name={}", key.key_id, key.name);
+            }
+            Ok(())
+        }
+        Err(e) => {
+            if e.contains("not running") {
+                eprintln!("Error: desktop app not running");
+                eprintln!("Hint: Start the desktop app to use this command");
+            } else {
+                eprintln!("Error: {}", e);
+            }
+            Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e,
+            )))
+        }
     }
-    Ok(())
 }
 
 fn sign_with_key(key_id: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -142,24 +207,41 @@ fn sign_with_key(key_id: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut data = Vec::new();
     std::io::stdin().read_to_end(&mut data)?;
 
-    match sign_ssh_key(key_id, &data) {
+    // Try IPC first; fall back to local sign if desktop not running
+    let sign_result = ipc::IpcClient::sign(key_id, &data).or_else(|_| {
+        // Fallback to local signing
+        sign_ssh_key(key_id, &data)
+            .map(|sig| sig.signature)
+            .map_err(|e| e.to_string())
+    });
+
+    match sign_result {
         Ok(signature) => {
-            println!("key_id={}", signature.key_id);
-            println!("signature_len={}", signature.signature.len());
+            println!("key_id={}", key_id);
+            println!("signature_len={}", signature.len());
             Ok(())
         }
-        Err(KenvError::UnlockFailed) => {
+        Err(e) if e.contains("reauthentication_required") => {
             // Reauthentication required
             eprintln!("This SSH key requires password reauthentication");
             let password =
                 Zeroizing::new(rpassword::prompt_password("Vault password: ")?);
-            kenv_core::reauth_password(&password)?;
-            let signature = sign_ssh_key(key_id, &data)?;
-            println!("key_id={}", signature.key_id);
-            println!("signature_len={}", signature.signature.len());
+            ipc::IpcClient::reauth_password(&password)?;
+            let signature = ipc::IpcClient::sign(key_id, &data)?;
+            println!("key_id={}", key_id);
+            println!("signature_len={}", signature.len());
             Ok(())
         }
-        Err(e) => Err(Box::new(e)),
+        Err(e) => {
+            if e.contains("not running") {
+                eprintln!("Error: desktop app not running");
+                eprintln!("Hint: Start the desktop app to use this command");
+            }
+            Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e,
+            )))
+        }
     }
 }
 

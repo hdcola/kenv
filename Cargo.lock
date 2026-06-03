@@ -1894,9 +1894,12 @@ version = "0.1.0"
 dependencies = [
  "assert_cmd",
  "clap",
+ "dirs 5.0.1",
  "kenv-core",
  "predicates",
  "rpassword",
+ "serde",
+ "serde_json",
  "tempfile",
  "zeroize",
 ]

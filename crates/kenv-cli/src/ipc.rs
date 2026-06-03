@@ -231,10 +231,10 @@ struct SignResponse {
     signature: Vec<u8>,
 }
 
-impl serde::de::Deserialize<'_> for Response {
+impl<'de> serde::de::Deserialize<'de> for Response {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::Deserializer<'_>,
+        D: serde::Deserializer<'de>,
     {
         #[derive(serde::Deserialize)]
         struct ResponseHelper {
