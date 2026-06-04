@@ -6,6 +6,35 @@ use std::time::Duration;
 
 pub struct IpcClient;
 
+#[derive(Debug, Clone)]
+pub enum IpcError {
+    SocketUnavailable(String),
+    RemoteError(String),
+    ProtocolError(String),
+}
+
+impl std::fmt::Display for IpcError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::SocketUnavailable(s) => write!(f, "{}", s),
+            Self::RemoteError(s) => write!(f, "{}", s),
+            Self::ProtocolError(s) => write!(f, "{}", s),
+        }
+    }
+}
+
+impl std::error::Error for IpcError {}
+
+impl IpcError {
+    pub fn is_socket_unavailable(&self) -> bool {
+        matches!(self, Self::SocketUnavailable(_))
+    }
+
+    pub fn contains(&self, needle: &str) -> bool {
+        self.to_string().contains(needle)
+    }
+}
+
 #[derive(Debug)]
 pub struct Response {
     pub success: bool,
@@ -14,20 +43,25 @@ pub struct Response {
 }
 
 impl IpcClient {
-    pub fn send_request(method: &str, params: Value) -> Result<Response, String> {
-        let socket_path = socket_path()?;
+    pub fn send_request(method: &str, params: Value) -> Result<Response, IpcError> {
+        let socket_path = socket_path()
+            .map_err(|e| IpcError::SocketUnavailable(e))?;
 
         // Check if socket exists
         if !socket_path.exists() {
-            return Err("desktop app not running or socket inaccessible".to_string());
+            return Err(IpcError::SocketUnavailable(
+                "desktop app not running or socket inaccessible".to_string(),
+            ));
         }
 
         // Connect to socket with timeout
         let mut stream = UnixStream::connect(&socket_path)
-            .map_err(|_| "desktop app not running or socket inaccessible".to_string())?;
+            .map_err(|_| IpcError::SocketUnavailable(
+                "desktop app not running or socket inaccessible".to_string(),
+            ))?;
 
         stream.set_read_timeout(Some(Duration::from_secs(5)))
-            .map_err(|e| format!("socket error: {}", e))?;
+            .map_err(|e| IpcError::ProtocolError(format!("socket error: {}", e)))?;
 
         // Build request
         let request = json!({
@@ -40,75 +74,70 @@ impl IpcClient {
         // Send request
         stream
             .write_all(request_str.as_bytes())
-            .map_err(|e| format!("failed to send request: {}", e))?;
+            .map_err(|e| IpcError::ProtocolError(format!("failed to send request: {}", e)))?;
         stream
             .write_all(b"\n")
-            .map_err(|e| format!("failed to send newline: {}", e))?;
+            .map_err(|e| IpcError::ProtocolError(format!("failed to send newline: {}", e)))?;
 
         // Read response
         let mut buffer = vec![0; 8192];
         let n = stream
             .read(&mut buffer)
-            .map_err(|e| format!("failed to read response: {}", e))?;
+            .map_err(|e| IpcError::ProtocolError(format!("failed to read response: {}", e)))?;
 
         if n == 0 {
-            return Err("no response from socket server".to_string());
+            return Err(IpcError::ProtocolError(
+                "no response from socket server".to_string(),
+            ));
         }
 
         let response_str = String::from_utf8_lossy(&buffer[..n]);
         let response: Response = serde_json::from_str(&response_str)
-            .map_err(|e| format!("failed to parse response: {}", e))?;
+            .map_err(|e| IpcError::ProtocolError(format!("failed to parse response: {}", e)))?;
 
-        Ok(response)
+        if response.success {
+            Ok(response)
+        } else {
+            Err(IpcError::RemoteError(
+                response.error.unwrap_or_else(|| "unknown error".to_string()),
+            ))
+        }
     }
 
-    pub fn unlock(password: &str) -> Result<(), String> {
+    pub fn unlock(password: &str) -> Result<(), IpcError> {
         let params = json!({
             "password": password
         });
 
-        let response = Self::send_request("unlock", params)?;
-
-        if response.success {
-            Ok(())
-        } else {
-            Err(response.error.unwrap_or_else(|| "unknown error".to_string()))
-        }
+        Self::send_request("unlock", params)?;
+        Ok(())
     }
 
-    pub fn list_slots() -> Result<Vec<SlotInfo>, String> {
+    pub fn list_slots() -> Result<Vec<SlotInfo>, IpcError> {
         let response = Self::send_request("list_slots", json!({}))?;
 
-        if response.success {
-            if let Some(result) = response.result {
-                let slots_response: SlotsResponse = serde_json::from_value(result)
-                    .map_err(|e| format!("failed to parse slots: {}", e))?;
-                Ok(slots_response.slots)
-            } else {
-                Err("no result in response".to_string())
-            }
+        if let Some(result) = response.result {
+            let slots_response: SlotsResponse = serde_json::from_value(result)
+                .map_err(|e| IpcError::ProtocolError(format!("failed to parse slots: {}", e)))?;
+            Ok(slots_response.slots)
         } else {
-            Err(response.error.unwrap_or_else(|| "unknown error".to_string()))
+            Err(IpcError::ProtocolError("no result in response".to_string()))
         }
     }
 
-    pub fn list_keys() -> Result<Vec<KeyInfo>, String> {
+    pub fn list_keys() -> Result<Vec<KeyInfo>, IpcError> {
         let response = Self::send_request("list_keys", json!({}))?;
 
-        if response.success {
-            if let Some(result) = response.result {
-                let keys_response: KeysResponse = serde_json::from_value(result)
-                    .map_err(|e| format!("failed to parse keys: {}", e))?;
-                Ok(keys_response.keys)
-            } else {
-                Err("no result in response".to_string())
-            }
+        if let Some(result) = response.result {
+            let keys_response: KeysResponse = serde_json::from_value(result)
+                .map_err(|e| IpcError::ProtocolError(format!("failed to parse keys: {}", e)))?;
+            Ok(keys_response.keys)
         } else {
-            Err(response.error.unwrap_or_else(|| "unknown error".to_string()))
+            Err(IpcError::ProtocolError("no result in response".to_string()))
         }
     }
 
-    pub fn sign(key_id: &str, data: &[u8]) -> Result<Vec<u8>, String> {
+    pub fn sign(key_id: &str, data: &[u8]) -> Result<Vec<u8>, IpcError> {
         let data_b64 = base64_encode(data);
         let params = json!({
             "key_id": key_id,
@@ -117,69 +146,45 @@ impl IpcClient {
 
         let response = Self::send_request("sign", params)?;
 
-        if response.success {
-            if let Some(result) = response.result {
-                let sign_response: SignResponse = serde_json::from_value(result)
-                    .map_err(|e| format!("failed to parse signature: {}", e))?;
-                Ok(sign_response.signature)
-            } else {
-                Err("no result in response".to_string())
-            }
+        if let Some(result) = response.result {
+            let sign_response: SignResponse = serde_json::from_value(result)
+                .map_err(|e| IpcError::ProtocolError(format!("failed to parse signature: {}", e)))?;
+            Ok(sign_response.signature)
         } else {
-            Err(response.error.unwrap_or_else(|| "unknown error".to_string()))
+            Err(IpcError::ProtocolError("no result in response".to_string()))
         }
     }
 
-    pub fn remove_slot(slot_id: u8) -> Result<(), String> {
+    pub fn remove_slot(slot_id: u8) -> Result<(), IpcError> {
         let params = json!({
             "slot_id": slot_id
         });
 
-        let response = Self::send_request("remove_slot", params)?;
-
-        if response.success {
-            Ok(())
-        } else {
-            Err(response.error.unwrap_or_else(|| "unknown error".to_string()))
-        }
+        Self::send_request("remove_slot", params)?;
+        Ok(())
     }
 
-    pub fn reauth_password(password: &str) -> Result<(), String> {
+    pub fn reauth_password(password: &str) -> Result<(), IpcError> {
         let params = json!({
             "password": password
         });
 
-        let response = Self::send_request("reauth_password", params)?;
-
-        if response.success {
-            Ok(())
-        } else {
-            Err(response.error.unwrap_or_else(|| "unknown error".to_string()))
-        }
+        Self::send_request("reauth_password", params)?;
+        Ok(())
     }
 
-    pub fn lock() -> Result<(), String> {
-        let response = Self::send_request("lock", json!({}))?;
-
-        if response.success {
-            Ok(())
-        } else {
-            Err(response.error.unwrap_or_else(|| "unknown error".to_string()))
-        }
+    pub fn lock() -> Result<(), IpcError> {
+        Self::send_request("lock", json!({}))?;
+        Ok(())
     }
 
-    pub fn create(password: &str) -> Result<(), String> {
+    pub fn create(password: &str) -> Result<(), IpcError> {
         let params = json!({
             "password": password
         });
 
-        let response = Self::send_request("create", params)?;
-
-        if response.success {
-            Ok(())
-        } else {
-            Err(response.error.unwrap_or_else(|| "unknown error".to_string()))
-        }
+        Self::send_request("create", params)?;
+        Ok(())
     }
 }
 

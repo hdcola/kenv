@@ -75,11 +75,18 @@ fn create_new_vault() -> Result<(), Box<dyn std::error::Error>> {
         return Err("passwords do not match".into());
     }
 
-    // Try IPC first; fall back to local create if desktop not running
-    let create_result = ipc::IpcClient::create(&password).or_else(|_| {
-        // Fallback to local create
-        create_vault(&password).map_err(|e| e.to_string())
-    });
+    // Try IPC first; only fallback to local create if socket is unavailable
+    let create_result = match ipc::IpcClient::create(&password) {
+        Ok(()) => Ok(()),
+        Err(ipc::IpcError::SocketUnavailable(_)) => {
+            // Desktop app not running, safe to create locally
+            create_vault(&password).map_err(|e| e.to_string())
+        }
+        Err(ipc::IpcError::RemoteError(e) | ipc::IpcError::ProtocolError(e)) => {
+            // Do NOT retry: vault may have been created or communication failed mid-stream
+            Err(e)
+        }
+    };
 
     match create_result {
         Ok(_) => {
@@ -96,7 +103,9 @@ fn create_new_vault() -> Result<(), Box<dyn std::error::Error>> {
 fn unlock_vault() -> Result<(), Box<dyn std::error::Error>> {
     let password = Zeroizing::new(rpassword::prompt_password("Vault password: ")?);
 
-    // Try IPC first; fall back to local unlock if desktop not running
+    // Try IPC first; fall back to local unlock if desktop not running.
+    // Unlock is safe to fallback on any IPC error because it's idempotent:
+    // unlocking an already-unlocked vault succeeds.
     let unlock_result = ipc::IpcClient::unlock(&password).or_else(|_| {
         // Fallback to local unlock
         unlock(&password).map(|_| ()).map_err(|e| e.to_string())
@@ -109,13 +118,15 @@ fn unlock_vault() -> Result<(), Box<dyn std::error::Error>> {
         }
         Err(e) => Err(Box::new(std::io::Error::new(
             std::io::ErrorKind::Other,
-            e,
+            e.to_string(),
         ))),
     }
 }
 
 fn lock_vault() -> Result<(), Box<dyn std::error::Error>> {
-    // Try IPC first; fall back to local lock if desktop not running
+    // Try IPC first; fall back to local lock if desktop not running.
+    // Lock is safe to fallback on any IPC error because it's idempotent:
+    // locking an already-locked vault succeeds.
     let lock_result = ipc::IpcClient::lock().or_else(|_| {
         lock().map_err(|e| e.to_string())
     });
@@ -127,7 +138,7 @@ fn lock_vault() -> Result<(), Box<dyn std::error::Error>> {
         }
         Err(e) => Err(Box::new(std::io::Error::new(
             std::io::ErrorKind::Other,
-            e,
+            e.to_string(),
         ))),
     }
 }
@@ -220,13 +231,21 @@ fn sign_with_key(key_id: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut data = Vec::new();
     std::io::stdin().read_to_end(&mut data)?;
 
-    // Try IPC first; fall back to local sign if desktop not running
-    let sign_result = ipc::IpcClient::sign(key_id, &data).or_else(|_| {
-        // Fallback to local signing
-        sign_ssh_key(key_id, &data)
-            .map(|sig| sig.signature)
-            .map_err(|e| e.to_string())
-    });
+    // Try IPC first; only fallback to local sign if socket is unavailable.
+    // Sign is non-idempotent, so we should NOT retry if communication fails mid-stream.
+    let sign_result = match ipc::IpcClient::sign(key_id, &data) {
+        Ok(sig) => Ok(sig),
+        Err(ipc::IpcError::SocketUnavailable(_)) => {
+            // Desktop app not running, safe to sign locally
+            sign_ssh_key(key_id, &data)
+                .map(|sig| sig.signature)
+                .map_err(|e| e.to_string())
+        }
+        Err(ipc::IpcError::RemoteError(e) | ipc::IpcError::ProtocolError(e)) => {
+            // Do NOT retry: key may have been signed or communication failed mid-stream
+            Err(e)
+        }
+    };
 
     match sign_result {
         Ok(signature) => {
