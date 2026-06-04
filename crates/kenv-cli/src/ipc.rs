@@ -167,6 +167,20 @@ impl IpcClient {
             Err(response.error.unwrap_or_else(|| "unknown error".to_string()))
         }
     }
+
+    pub fn create(password: &str) -> Result<(), String> {
+        let params = json!({
+            "password": password
+        });
+
+        let response = Self::send_request("create", params)?;
+
+        if response.success {
+            Ok(())
+        } else {
+            Err(response.error.unwrap_or_else(|| "unknown error".to_string()))
+        }
+    }
 }
 
 fn socket_path() -> Result<PathBuf, String> {

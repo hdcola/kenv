@@ -216,6 +216,27 @@ fn handle_request(req: &Request) -> Response {
                 error: Some(e),
             },
         },
+        "create" => {
+            match req.params.get("password").and_then(|v| v.as_str()) {
+                Some(password) => match handlers::handle_create(password.to_string()) {
+                    Ok(result) => Response {
+                        success: true,
+                        result: Some(Value::String(result)),
+                        error: None,
+                    },
+                    Err(e) => Response {
+                        success: false,
+                        result: None,
+                        error: Some(e),
+                    },
+                },
+                None => Response {
+                    success: false,
+                    result: None,
+                    error: Some("missing password parameter".to_string()),
+                },
+            }
+        }
         _ => Response {
             success: false,
             result: None,

@@ -75,9 +75,22 @@ fn create_new_vault() -> Result<(), Box<dyn std::error::Error>> {
         return Err("passwords do not match".into());
     }
 
-    create_vault(&password)?;
-    println!("vault_status=locked");
-    Ok(())
+    // Try IPC first; fall back to local create if desktop not running
+    let create_result = ipc::IpcClient::create(&password).or_else(|_| {
+        // Fallback to local create
+        create_vault(&password).map_err(|e| e.to_string())
+    });
+
+    match create_result {
+        Ok(_) => {
+            println!("vault_status=locked");
+            Ok(())
+        }
+        Err(e) => Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            e,
+        ))),
+    }
 }
 
 fn unlock_vault() -> Result<(), Box<dyn std::error::Error>> {

@@ -199,3 +199,10 @@ pub fn handle_lock() -> Result<String, String> {
         .map_err(|e| e.to_string())
         .map(|_| "ok".to_string())
 }
+
+pub fn handle_create(password: String) -> Result<String, String> {
+    let password_zeroizing = zeroize::Zeroizing::new(password);
+    kenv_core::create_vault(&password_zeroizing)
+        .map_err(|e| e.to_string())
+        .map(|_| "vault_status=locked".to_string())
+}
