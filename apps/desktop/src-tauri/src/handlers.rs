@@ -181,9 +181,11 @@ pub fn handle_sign(req: SignRequest) -> Result<SignResponse, String> {
 }
 
 pub fn handle_remove_slot(req: RemoveSlotRequest) -> Result<String, String> {
-    kenv_core::remove_slot(req.slot_id)
-        .map_err(|e| e.to_string())
-        .map(|_| "ok".to_string())
+    match kenv_core::remove_slot(req.slot_id) {
+        Ok(()) => Ok("ok".to_string()),
+        Err(kenv_core::KenvError::UnlockFailed) => Err("reauthentication_required".to_string()),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 pub fn handle_reauth_password(password: String) -> Result<String, String> {

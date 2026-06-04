@@ -119,17 +119,16 @@ pub fn create_vault(password: &str) -> Result<(), KenvError> {
     create_vault_at(&path, password, &KdfParams::recommended())
 }
 
-/// Create a password unlock slot with DEK wrapping
+/// Create a password unlock slot wrapping the provided encryption key
+/// The key parameter should be the same key used to encrypt the vault payload
 fn create_password_slot(
     password: &str,
+    key: &[u8; 32],
     slot_id: u8,
     label: String,
     params: &KdfParams,
 ) -> Result<slots::UnlockSlot, KenvError> {
-    let mut dek = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut dek);
-
-    let password_data = slots::password::wrap_dek(password, &dek, params)?;
+    let password_data = slots::password::wrap_dek(password, key, params)?;
 
     Ok(slots::UnlockSlot {
         slot_id,
@@ -162,10 +161,12 @@ pub fn create_vault_at(path: &Path, password: &str, params: &KdfParams) -> Resul
         crypto::derive_key(password, &salt, params).map_err(|_| KenvError::EncryptionError)?,
     );
 
-    // Generate DEK and create initial password slot
-    let mut dek = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut dek);
-    let password_slot = create_password_slot(password, 1, "password".to_string(), params)?;
+    // Convert key to [u8; 32] for wrapping in password slot
+    let mut key_array = [0u8; 32];
+    key_array.copy_from_slice(&*key);
+
+    // Create initial password slot wrapping the actual encryption key
+    let password_slot = create_password_slot(password, &key_array, 1, "password".to_string(), params)?;
 
     let mut payload = vault::VaultPayload::new();
     payload.slots.push(password_slot);

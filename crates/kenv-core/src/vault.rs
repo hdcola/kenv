@@ -72,7 +72,33 @@ impl Zeroize for VaultPayload {
     }
 }
 
+thread_local! {
+    static TEST_VAULT_PATH: std::sync::Mutex<Option<std::path::PathBuf>> = std::sync::Mutex::new(None);
+}
+
+/// Set vault path for testing (integration tests only)
+pub fn set_test_vault_path(path: std::path::PathBuf) {
+    TEST_VAULT_PATH.with(|p| {
+        *p.lock().unwrap() = Some(path);
+    });
+}
+
+/// Clear vault path for testing (integration tests only)
+pub fn clear_test_vault_path() {
+    TEST_VAULT_PATH.with(|p| {
+        *p.lock().unwrap() = None;
+    });
+}
+
 pub fn vault_path() -> Result<std::path::PathBuf, KenvError> {
+    // Check for test-injected path first
+    #[cfg(test)]
+    {
+        if let Some(path) = TEST_VAULT_PATH.with(|p| p.lock().unwrap().clone()) {
+            return Ok(path);
+        }
+    }
+
     let home = dirs::home_dir().ok_or(KenvError::FileOperationFailed)?;
     Ok(home.join(".kenv").join("vault.kenv"))
 }
