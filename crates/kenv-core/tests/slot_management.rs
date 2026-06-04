@@ -3,6 +3,7 @@ use kenv_core::{
     KenvError, VaultStatus,
     slots::{UnlockSlot, SlotType},
 };
+use serial_test::serial;
 use std::time::SystemTime;
 
 #[test]
@@ -52,48 +53,58 @@ fn reauth_password_requires_unlocked_vault() {
 }
 
 #[test]
+#[serial]
 fn newly_created_vault_has_password_slot() {
     use tempfile::TempDir;
+    use kenv_core::{unlock, reauth_password, vault};
 
     let temp_dir = TempDir::new().unwrap();
     let vault_path = temp_dir.path().join("vault.kenv");
     let password = "test_password_123";
     let params = kenv_core::crypto::KdfParams::for_tests();
 
-    // Create vault at temp path directly (no global state)
+    // Create vault at temp path
     kenv_core::create_vault_at(&vault_path, password, &params)
         .expect("failed to create vault");
 
-    // Verify vault file exists
-    assert!(vault_path.exists(), "vault file should exist");
+    // Set test vault path so vault_path() uses temp location
+    vault::set_test_vault_path(vault_path.clone());
 
-    // Verify it has the KENV magic bytes
-    let vault_data = std::fs::read(&vault_path).expect("failed to read vault");
-    assert_eq!(&vault_data[0..4], b"KENV", "vault file should have KENV magic");
+    // Verify vault can be unlocked with correct password
+    unlock(password).expect("failed to unlock with correct password");
+
+    // Verify reauth_password works - this proves password slot wraps correct key
+    reauth_password(password).expect("reauth should succeed with correct password");
+
+    // Cleanup: clear state and vault path (in that order)
+    kenv_core::lock().ok();
+    vault::clear_test_vault_path();
 }
 
 #[test]
+#[serial]
 fn newly_created_vault_reauth_succeeds() {
     use tempfile::TempDir;
-    use kenv_core::{create_vault, unlock, lock, reauth_password};
+    use kenv_core::{create_vault, unlock, lock, reauth_password, vault};
     use std::fs;
+
+    // Ensure clean state: clear test vault path and lock first
+    vault::clear_test_vault_path();
+    lock().ok();
 
     // Cleanup any leftover real vault
     let real_vault = dirs::home_dir()
         .map(|h| h.join(".kenv").join("vault.kenv"));
-    if let Some(path) = real_vault {
-        let _ = lock();
-        let _ = fs::remove_file(&path);
+    if let Some(path) = &real_vault {
+        let _ = fs::remove_file(path);
     }
-
-    kenv_core::vault::clear_test_vault_path();
 
     let temp_dir = TempDir::new().unwrap();
     let vault_path = temp_dir.path().join("vault.kenv");
     let password = "test_password_123";
 
     // Set test vault path
-    kenv_core::vault::set_test_vault_path(vault_path);
+    vault::set_test_vault_path(vault_path);
 
     // Create vault
     create_vault(password).expect("failed to create vault");
@@ -106,31 +117,33 @@ fn newly_created_vault_reauth_succeeds() {
 
     // Cleanup
     lock().ok();
-    kenv_core::vault::clear_test_vault_path();
+    vault::clear_test_vault_path();
 }
 
 #[test]
+#[serial]
 fn newly_created_vault_reauth_fails_with_wrong_password() {
     use tempfile::TempDir;
-    use kenv_core::{create_vault, unlock, lock, reauth_password};
+    use kenv_core::{create_vault, unlock, lock, reauth_password, vault};
     use std::fs;
+
+    // Ensure clean state: clear test vault path and lock first
+    vault::clear_test_vault_path();
+    lock().ok();
 
     // Cleanup any leftover real vault
     let real_vault = dirs::home_dir()
         .map(|h| h.join(".kenv").join("vault.kenv"));
-    if let Some(path) = real_vault {
-        let _ = lock();
-        let _ = fs::remove_file(&path);
+    if let Some(path) = &real_vault {
+        let _ = fs::remove_file(path);
     }
-
-    kenv_core::vault::clear_test_vault_path();
 
     let temp_dir = TempDir::new().unwrap();
     let vault_path = temp_dir.path().join("vault.kenv");
     let password = "test_password_123";
 
     // Set test vault path
-    kenv_core::vault::set_test_vault_path(vault_path);
+    vault::set_test_vault_path(vault_path);
 
     // Create vault
     create_vault(password).expect("failed to create vault");
@@ -144,5 +157,5 @@ fn newly_created_vault_reauth_fails_with_wrong_password() {
 
     // Cleanup
     lock().ok();
-    kenv_core::vault::clear_test_vault_path();
+    vault::clear_test_vault_path();
 }

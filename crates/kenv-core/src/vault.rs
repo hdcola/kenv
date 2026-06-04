@@ -72,18 +72,20 @@ impl Zeroize for VaultPayload {
     }
 }
 
+// Thread-local storage for test vault path overrides
+// Each test thread gets its own isolated path, preventing interference in concurrent test execution
 thread_local! {
     static TEST_VAULT_PATH: std::sync::Mutex<Option<std::path::PathBuf>> = std::sync::Mutex::new(None);
 }
 
-/// Set vault path for testing (integration tests only)
+/// Set vault path for testing (truly isolated to calling thread)
 pub fn set_test_vault_path(path: std::path::PathBuf) {
     TEST_VAULT_PATH.with(|p| {
         *p.lock().unwrap() = Some(path);
     });
 }
 
-/// Clear vault path for testing (integration tests only)
+/// Clear vault path for testing
 pub fn clear_test_vault_path() {
     TEST_VAULT_PATH.with(|p| {
         *p.lock().unwrap() = None;
@@ -91,12 +93,9 @@ pub fn clear_test_vault_path() {
 }
 
 pub fn vault_path() -> Result<std::path::PathBuf, KenvError> {
-    // Check for test-injected path first
-    #[cfg(test)]
-    {
-        if let Some(path) = TEST_VAULT_PATH.with(|p| p.lock().unwrap().clone()) {
-            return Ok(path);
-        }
+    // Check for test-injected path first (each thread has its own isolated thread-local value)
+    if let Some(path) = TEST_VAULT_PATH.with(|p| p.lock().unwrap().clone()) {
+        return Ok(path);
     }
 
     let home = dirs::home_dir().ok_or(KenvError::FileOperationFailed)?;

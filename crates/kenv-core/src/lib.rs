@@ -46,6 +46,8 @@ struct VaultState {
     reauthenticated_at: Option<SystemTime>,
     salt: Option<[u8; 32]>,
     kdf_params: Option<KdfParams>,
+    vault_path: Option<std::path::PathBuf>,
+    unlocked_by_thread_id: Option<std::thread::ThreadId>,
 }
 
 impl Default for VaultState {
@@ -58,6 +60,8 @@ impl Default for VaultState {
             reauthenticated_at: None,
             salt: None,
             kdf_params: None,
+            vault_path: None,
+            unlocked_by_thread_id: None,
         }
     }
 }
@@ -82,6 +86,8 @@ static VAULT_STATE: RwLock<VaultState> = RwLock::new(VaultState {
     reauthenticated_at: None,
     salt: None,
     kdf_params: None,
+    vault_path: None,
+    unlocked_by_thread_id: None,
 });
 
 #[derive(Debug, Error)]
@@ -248,6 +254,8 @@ pub fn unlock(password: &str) -> Result<VaultStatus, KenvError> {
         state.unlocked_at = Some(SystemTime::now());
         state.salt = Some(salt_array);
         state.kdf_params = Some(params);
+        state.vault_path = Some(path.clone());
+        state.unlocked_by_thread_id = Some(std::thread::current().id());
     }
 
     Ok(VaultStatus::Unlocked)
@@ -472,8 +480,13 @@ pub fn reauth_password(password: &str) -> Result<(), KenvError> {
     {
         let state = VAULT_STATE.read();
 
-        // Require vault to be unlocked
-        if state.payload.is_none() {
+        // Require vault to be unlocked, same vault path, and unlocked by same thread
+        let current_thread_id = std::thread::current().id();
+        let current_path = vault::vault_path()?;
+        if state.payload.is_none()
+            || state.vault_path.as_ref() != Some(&current_path)
+            || state.unlocked_by_thread_id != Some(current_thread_id)
+        {
             return Err(KenvError::VaultLocked);
         }
 
