@@ -75,22 +75,53 @@ fn run_socket_server() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn handle_client(socket: &mut std::os::unix::net::UnixStream) -> Result<(), Box<dyn std::error::Error>> {
-    let mut buffer = vec![0; 4096];
-    let n = socket.read(&mut buffer)?;
-
-    if n == 0 {
-        return Ok(());
-    }
-
-    let request_str = String::from_utf8_lossy(&buffer[..n]);
+    // Read request with length-prefixed framing
+    let request_bytes = read_message(socket)?;
+    let request_str = String::from_utf8(request_bytes)?;
     let request: Request = serde_json::from_str(&request_str)?;
 
     let response = handle_request(&request);
 
     let response_json = serde_json::to_string(&response)?;
-    socket.write_all(response_json.as_bytes())?;
-    socket.write_all(b"\n")?;
+    send_message(socket, response_json.as_bytes())?;
 
+    Ok(())
+}
+
+fn read_exact(socket: &mut std::os::unix::net::UnixStream, buf: &mut [u8]) -> Result<(), Box<dyn std::error::Error>> {
+    let mut offset = 0;
+    while offset < buf.len() {
+        match socket.read(&mut buf[offset..])? {
+            0 => return Err("unexpected EOF while reading message".into()),
+            n => offset += n,
+        }
+    }
+    Ok(())
+}
+
+fn read_message(socket: &mut std::os::unix::net::UnixStream) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    // Read exactly 4 bytes for length header
+    let mut len_bytes = [0u8; 4];
+    read_exact(socket, &mut len_bytes)?;
+
+    let payload_len = u32::from_be_bytes(len_bytes) as usize;
+
+    const MAX_PAYLOAD: usize = 100 * 1024 * 1024; // 100 MB
+    if payload_len == 0 || payload_len > MAX_PAYLOAD {
+        return Err(format!("invalid message length: {}", payload_len).into());
+    }
+
+    // Allocate and read exactly payload_len bytes
+    let mut payload = vec![0u8; payload_len];
+    read_exact(socket, &mut payload)?;
+
+    Ok(payload)
+}
+
+fn send_message(socket: &mut std::os::unix::net::UnixStream, payload: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+    let len = payload.len() as u32;
+    socket.write_all(&len.to_be_bytes())?;
+    socket.write_all(payload)?;
     Ok(())
 }
 

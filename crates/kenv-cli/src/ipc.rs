@@ -117,35 +117,21 @@ impl IpcClient {
         stream.set_read_timeout(Some(Duration::from_secs(5)))
             .map_err(|e| IpcError::RequestFailed(format!("socket error: {}", e)))?;
 
-        // Build request
+        // Build and send request with length prefix
         let request = json!({
             "method": method,
             "params": params
         });
-
         let request_str = request.to_string();
 
-        // Send request
-        stream
-            .write_all(request_str.as_bytes())
+        send_message(&mut stream, request_str.as_bytes())
             .map_err(|e| IpcError::RequestFailed(format!("failed to send request: {}", e)))?;
-        stream
-            .write_all(b"\n")
-            .map_err(|e| IpcError::RequestFailed(format!("failed to send newline: {}", e)))?;
 
-        // Read response
-        let mut buffer = vec![0; 8192];
-        let n = stream
-            .read(&mut buffer)
-            .map_err(|e| IpcError::ResponseFailed(format!("failed to read response: {}", e)))?;
+        // Read response with length-prefixed framing
+        let response_bytes = read_message(&mut stream)
+            .map_err(|e| IpcError::ResponseFailed(e))?;
 
-        if n == 0 {
-            return Err(IpcError::ResponseFailed(
-                "no response from socket server".to_string(),
-            ));
-        }
-
-        let response_str = String::from_utf8_lossy(&buffer[..n]);
+        let response_str = String::from_utf8_lossy(&response_bytes);
         let response: Response = serde_json::from_str(&response_str)
             .map_err(|e| IpcError::ResponseFailed(format!("failed to parse response: {}", e)))?;
 
@@ -242,13 +228,53 @@ impl IpcClient {
     }
 }
 
+fn read_exact(stream: &mut UnixStream, buf: &mut [u8]) -> Result<(), String> {
+    let mut offset = 0;
+    while offset < buf.len() {
+        match stream.read(&mut buf[offset..]) {
+            Ok(0) => return Err("unexpected EOF".to_string()),
+            Ok(n) => offset += n,
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    Ok(())
+}
+
+fn read_message(stream: &mut UnixStream) -> Result<Vec<u8>, String> {
+    // Read exactly 4 bytes for length header
+    let mut len_bytes = [0u8; 4];
+    read_exact(stream, &mut len_bytes)?;
+
+    let payload_len = u32::from_be_bytes(len_bytes) as usize;
+
+    const MAX_PAYLOAD: usize = 100 * 1024 * 1024; // 100 MB
+    if payload_len == 0 || payload_len > MAX_PAYLOAD {
+        return Err(format!("invalid message length: {}", payload_len));
+    }
+
+    // Allocate and read exactly payload_len bytes
+    let mut payload = vec![0u8; payload_len];
+    read_exact(stream, &mut payload)?;
+
+    Ok(payload)
+}
+
+fn send_message(stream: &mut UnixStream, payload: &[u8]) -> Result<(), String> {
+    let len = payload.len() as u32;
+    stream
+        .write_all(&len.to_be_bytes())
+        .map_err(|e| e.to_string())?;
+    stream.write_all(payload).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 fn socket_path() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or("home directory not found")?;
     Ok(home.join(".kenv").join("desktop.sock"))
 }
 
 // Base64 encoding for binary data
-fn base64_encode(data: &[u8]) -> String {
+pub fn base64_encode(data: &[u8]) -> String {
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut result = String::new();
     for chunk in data.chunks(3) {

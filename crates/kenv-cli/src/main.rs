@@ -212,6 +212,18 @@ fn remove_unlock_slot(slot_id: u8) -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+/// Translate KenvError to CLI error string, applying context-aware conversions.
+/// UnlockFailed becomes "reauthentication_required" when it comes from operations
+/// that require reauthentication (sign, remove_slot).
+fn error_to_string(error: KenvError, operation: &str) -> String {
+    match error {
+        KenvError::UnlockFailed if operation == "sign" || operation == "remove_slot" => {
+            "reauthentication_required".to_string()
+        }
+        e => e.to_string(),
+    }
+}
+
 fn print_ssh_keys() -> Result<(), Box<dyn std::error::Error>> {
     match ipc::IpcClient::list_keys() {
         Ok(keys) => {
@@ -250,7 +262,7 @@ fn sign_with_key(key_id: &str) -> Result<(), Box<dyn std::error::Error>> {
             // Desktop app not running, safe to sign locally
             sign_ssh_key(key_id, &data)
                 .map(|sig| sig.signature)
-                .map_err(|e| e.to_string())
+                .map_err(|e| error_to_string(e, "sign"))
         }
         Err(ipc::IpcError::RemoteError(e)
             | ipc::IpcError::RequestFailed(e)
@@ -263,7 +275,7 @@ fn sign_with_key(key_id: &str) -> Result<(), Box<dyn std::error::Error>> {
     match sign_result {
         Ok(signature) => {
             println!("key_id={}", key_id);
-            println!("signature_len={}", signature.len());
+            println!("signature={}", ipc::base64_encode(&signature));
             Ok(())
         }
         Err(e) if e.contains("reauthentication_required") => {
@@ -274,7 +286,7 @@ fn sign_with_key(key_id: &str) -> Result<(), Box<dyn std::error::Error>> {
             ipc::IpcClient::reauth_password(&password)?;
             let signature = ipc::IpcClient::sign(key_id, &data)?;
             println!("key_id={}", key_id);
-            println!("signature_len={}", signature.len());
+            println!("signature={}", ipc::base64_encode(&signature));
             Ok(())
         }
         Err(e) => {

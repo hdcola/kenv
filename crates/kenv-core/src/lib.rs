@@ -592,7 +592,13 @@ pub fn sign_ssh_key(key_id: &str, data_to_sign: &[u8]) -> Result<ssh::SshSignatu
             .find(|k| k.key_id == key_id && !k.disabled);
 
         match key {
-            Some(_key) => ssh::sign_ssh_key(key_id, data_to_sign),
+            Some(key) => {
+                // Check if key requires reauthentication
+                if key.require_reauthentication && !is_password_reauthenticated() {
+                    return Err(KenvError::UnlockFailed);
+                }
+                ssh::sign_ssh_key(key_id, data_to_sign)
+            }
             None => Err(KenvError::SshKeyUnavailable),
         }
     } else {
