@@ -2,8 +2,8 @@ mod ipc;
 
 use clap::{Parser, Subcommand};
 use kenv_core::{
-    create_vault, get_vault_status, list_slots, list_ssh_keys, lock, remove_slot, sign_ssh_key,
-    unlock, KenvError, VaultStatus,
+    create_vault, get_vault_status, list_slots, list_ssh_keys, lock, reauth_password,
+    remove_slot, sign_ssh_key, unlock, KenvError, VaultStatus,
 };
 use zeroize::Zeroizing;
 
@@ -283,8 +283,32 @@ fn sign_with_key(key_id: &str) -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("This SSH key requires password reauthentication");
             let password =
                 Zeroizing::new(rpassword::prompt_password("Vault password: ")?);
-            ipc::IpcClient::reauth_password(&password)?;
-            let signature = ipc::IpcClient::sign(key_id, &data)?;
+
+            // Try IPC first, fallback to local if desktop not running
+            let reauth_result = ipc::IpcClient::reauth_password(&password)
+                .or_else(|ipc_err| {
+                    if ipc_err.is_socket_unavailable() {
+                        // Desktop not running, use local reauth
+                        reauth_password(&password).map_err(|e| e.to_string())
+                    } else {
+                        // Other IPC error, propagate
+                        Err(ipc_err.to_string())
+                    }
+                });
+
+            reauth_result?;
+
+            // Retry sign with same pattern: IPC first, then local fallback
+            let signature = match ipc::IpcClient::sign(key_id, &data) {
+                Ok(sig) => sig,
+                Err(ipc::IpcError::SocketUnavailable(_)) => {
+                    sign_ssh_key(key_id, &data)
+                        .map(|sig| sig.signature)
+                        .map_err(|e| error_to_string(e, "sign"))?
+                }
+                Err(e) => Err(e.to_string())?,
+            };
+
             println!("key_id={}", key_id);
             println!("signature={}", ipc::base64_encode(&signature));
             Ok(())
