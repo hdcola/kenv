@@ -13,9 +13,15 @@ fn ipc_error_remote_error_variant_exists() {
 }
 
 #[test]
-fn ipc_error_protocol_error_variant_exists() {
-    let err = IpcError::ProtocolError("test".into());
-    assert!(matches!(err, IpcError::ProtocolError(_)));
+fn ipc_error_request_failed_variant_exists() {
+    let err = IpcError::RequestFailed("test".into());
+    assert!(matches!(err, IpcError::RequestFailed(_)));
+}
+
+#[test]
+fn ipc_error_response_failed_variant_exists() {
+    let err = IpcError::ResponseFailed("test".into());
+    assert!(matches!(err, IpcError::ResponseFailed(_)));
 }
 
 #[test]
@@ -26,8 +32,11 @@ fn ipc_error_display_formats_correctly() {
     let remote = IpcError::RemoteError("vault already exists".into());
     assert_eq!(remote.to_string(), "vault already exists");
 
-    let protocol = IpcError::ProtocolError("parse failed".into());
-    assert_eq!(protocol.to_string(), "parse failed");
+    let request_failed = IpcError::RequestFailed("write timeout".into());
+    assert_eq!(request_failed.to_string(), "write timeout");
+
+    let response_failed = IpcError::ResponseFailed("parse failed".into());
+    assert_eq!(response_failed.to_string(), "parse failed");
 }
 
 #[test]
@@ -41,9 +50,13 @@ fn ipc_error_contains_method_works() {
     assert!(remote.contains("already exists"));
     assert!(!remote.contains("socket"));
 
-    let protocol = IpcError::ProtocolError("no response from server".into());
-    assert!(protocol.contains("no response"));
-    assert!(!protocol.contains("created"));
+    let request_failed = IpcError::RequestFailed("write timeout".into());
+    assert!(request_failed.contains("write"));
+    assert!(!request_failed.contains("response"));
+
+    let response_failed = IpcError::ResponseFailed("no response from server".into());
+    assert!(response_failed.contains("no response"));
+    assert!(!response_failed.contains("created"));
 }
 
 #[test]

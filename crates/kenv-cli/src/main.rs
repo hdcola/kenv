@@ -82,8 +82,19 @@ fn create_new_vault() -> Result<(), Box<dyn std::error::Error>> {
             // Desktop app not running, safe to create locally
             create_vault(&password).map_err(|e| e.to_string())
         }
-        Err(ipc::IpcError::RemoteError(e) | ipc::IpcError::ProtocolError(e)) => {
-            // Do NOT retry: vault may have been created or communication failed mid-stream
+        Err(ipc::IpcError::RemoteError(e)) => {
+            // Server returned an error (e.g., vault already exists)
+            // Do NOT retry: error is intentional
+            Err(e)
+        }
+        Err(ipc::IpcError::RequestFailed(e)) => {
+            // Request transmission failed; desktop has not processed
+            // Do NOT retry for create (non-idempotent operation)
+            Err(e)
+        }
+        Err(ipc::IpcError::ResponseFailed(e)) => {
+            // Response transmission/parsing failed; desktop likely processed request
+            // CRITICAL: Do NOT retry — vault may have been created
             Err(e)
         }
     };
@@ -241,7 +252,9 @@ fn sign_with_key(key_id: &str) -> Result<(), Box<dyn std::error::Error>> {
                 .map(|sig| sig.signature)
                 .map_err(|e| e.to_string())
         }
-        Err(ipc::IpcError::RemoteError(e) | ipc::IpcError::ProtocolError(e)) => {
+        Err(ipc::IpcError::RemoteError(e)
+            | ipc::IpcError::RequestFailed(e)
+            | ipc::IpcError::ResponseFailed(e)) => {
             // Do NOT retry: key may have been signed or communication failed mid-stream
             Err(e)
         }

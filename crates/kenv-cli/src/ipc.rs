@@ -8,9 +8,21 @@ pub struct IpcClient;
 
 #[derive(Debug, Clone)]
 pub enum IpcError {
+    /// Socket not found or connection to server failed.
+    /// Safe to fallback to local operations (desktop app not running).
     SocketUnavailable(String),
+    /// Request sent but desktop app returned an error response.
+    /// Examples: vault already exists, weak password, etc.
+    /// Do NOT retry — server has processed the request.
     RemoteError(String),
-    ProtocolError(String),
+    /// Request transmission or timeout failed before reaching desktop.
+    /// Desktop has not processed the request.
+    /// Future: may be safe to retry, but must be explicit.
+    RequestFailed(String),
+    /// Response transmission or parsing failed.
+    /// Desktop likely processed the request (vault may exist, etc.).
+    /// CRITICAL: Do NOT retry — vault may have been created.
+    ResponseFailed(String),
 }
 
 impl std::fmt::Display for IpcError {
@@ -18,7 +30,8 @@ impl std::fmt::Display for IpcError {
         match self {
             Self::SocketUnavailable(s) => write!(f, "{}", s),
             Self::RemoteError(s) => write!(f, "{}", s),
-            Self::ProtocolError(s) => write!(f, "{}", s),
+            Self::RequestFailed(s) => write!(f, "{}", s),
+            Self::ResponseFailed(s) => write!(f, "{}", s),
         }
     }
 }
@@ -26,6 +39,8 @@ impl std::fmt::Display for IpcError {
 impl std::error::Error for IpcError {}
 
 impl IpcError {
+    /// Returns true only for SocketUnavailable errors (safe to fallback to local operations).
+    /// RequestFailed and ResponseFailed must NOT trigger fallback for non-idempotent operations.
     pub fn is_socket_unavailable(&self) -> bool {
         matches!(self, Self::SocketUnavailable(_))
     }
@@ -34,6 +49,45 @@ impl IpcError {
         self.to_string().contains(needle)
     }
 }
+
+/// Error classification invariant:
+///
+/// This enum explicitly separates errors by fallback safety for non-idempotent IPC operations:
+///
+/// **SocketUnavailable** — Safe to fallback:
+/// - Socket file doesn't exist → desktop not running
+/// - Connection fails → desktop not listening
+/// - Desktop has NOT processed the request
+/// - Local fallback is safe (no duplicate work)
+///
+/// **RequestFailed** — Unsafe to fallback (future consideration):
+/// - Request transmission failed (write, timeout, config)
+/// - Desktop may or may not have processed the request
+/// - Current policy: Don't retry (non-idempotent)
+/// - Future: May enable explicit retry for specific errors
+///
+/// **ResponseFailed** — CRITICAL: Never fallback:
+/// - Response transmission/parsing failed (read, timeout, JSON parse)
+/// - Desktop HAS LIKELY processed the request
+/// - Vault may have been created, SSH key may have been signed, etc.
+/// - Local fallback WILL cause duplicate work or incorrect state
+/// - Examples: "vault already exists" error to user, silent data loss
+///
+/// **RemoteError** — Server returned explicit error:
+/// - Desktop processed request and returned intentional error
+/// - Examples: vault already exists, weak password, key not found
+/// - No fallback, return error to user
+///
+/// In create_new_vault() (main.rs), only SocketUnavailable triggers fallback:
+/// ```ignore
+/// match ipc::IpcClient::create(&password) {
+///     Ok(()) => Ok(()),
+///     Err(SocketUnavailable(_)) => create_vault(...),  // Safe: desktop never heard us
+///     Err(RequestFailed(_)) => Err(...),               // Unsafe: desktop might process
+///     Err(ResponseFailed(_)) => Err(...),              // CRITICAL: vault likely created
+///     Err(RemoteError(e)) => Err(e),                   // Server error
+/// }
+/// ```
 
 #[derive(Debug)]
 pub struct Response {
@@ -61,7 +115,7 @@ impl IpcClient {
             ))?;
 
         stream.set_read_timeout(Some(Duration::from_secs(5)))
-            .map_err(|e| IpcError::ProtocolError(format!("socket error: {}", e)))?;
+            .map_err(|e| IpcError::RequestFailed(format!("socket error: {}", e)))?;
 
         // Build request
         let request = json!({
@@ -74,26 +128,26 @@ impl IpcClient {
         // Send request
         stream
             .write_all(request_str.as_bytes())
-            .map_err(|e| IpcError::ProtocolError(format!("failed to send request: {}", e)))?;
+            .map_err(|e| IpcError::RequestFailed(format!("failed to send request: {}", e)))?;
         stream
             .write_all(b"\n")
-            .map_err(|e| IpcError::ProtocolError(format!("failed to send newline: {}", e)))?;
+            .map_err(|e| IpcError::RequestFailed(format!("failed to send newline: {}", e)))?;
 
         // Read response
         let mut buffer = vec![0; 8192];
         let n = stream
             .read(&mut buffer)
-            .map_err(|e| IpcError::ProtocolError(format!("failed to read response: {}", e)))?;
+            .map_err(|e| IpcError::ResponseFailed(format!("failed to read response: {}", e)))?;
 
         if n == 0 {
-            return Err(IpcError::ProtocolError(
+            return Err(IpcError::ResponseFailed(
                 "no response from socket server".to_string(),
             ));
         }
 
         let response_str = String::from_utf8_lossy(&buffer[..n]);
         let response: Response = serde_json::from_str(&response_str)
-            .map_err(|e| IpcError::ProtocolError(format!("failed to parse response: {}", e)))?;
+            .map_err(|e| IpcError::ResponseFailed(format!("failed to parse response: {}", e)))?;
 
         if response.success {
             Ok(response)
@@ -118,10 +172,10 @@ impl IpcClient {
 
         if let Some(result) = response.result {
             let slots_response: SlotsResponse = serde_json::from_value(result)
-                .map_err(|e| IpcError::ProtocolError(format!("failed to parse slots: {}", e)))?;
+                .map_err(|e| IpcError::ResponseFailed(format!("failed to parse slots: {}", e)))?;
             Ok(slots_response.slots)
         } else {
-            Err(IpcError::ProtocolError("no result in response".to_string()))
+            Err(IpcError::ResponseFailed("no result in response".to_string()))
         }
     }
 
@@ -130,10 +184,10 @@ impl IpcClient {
 
         if let Some(result) = response.result {
             let keys_response: KeysResponse = serde_json::from_value(result)
-                .map_err(|e| IpcError::ProtocolError(format!("failed to parse keys: {}", e)))?;
+                .map_err(|e| IpcError::ResponseFailed(format!("failed to parse keys: {}", e)))?;
             Ok(keys_response.keys)
         } else {
-            Err(IpcError::ProtocolError("no result in response".to_string()))
+            Err(IpcError::ResponseFailed("no result in response".to_string()))
         }
     }
 
@@ -148,10 +202,10 @@ impl IpcClient {
 
         if let Some(result) = response.result {
             let sign_response: SignResponse = serde_json::from_value(result)
-                .map_err(|e| IpcError::ProtocolError(format!("failed to parse signature: {}", e)))?;
+                .map_err(|e| IpcError::ResponseFailed(format!("failed to parse signature: {}", e)))?;
             Ok(sign_response.signature)
         } else {
-            Err(IpcError::ProtocolError("no result in response".to_string()))
+            Err(IpcError::ResponseFailed("no result in response".to_string()))
         }
     }
 
