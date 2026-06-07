@@ -2,7 +2,7 @@
 
 `kenv` 是一款面向开发者的上下文环境安全管理工具。它的目标是把环境变量和 SSH key 统一放进一个本地加密保险箱中管理，让开发者在不同项目、终端和工具之间切换凭证时更安全、更顺滑。
 
-本项目当前处于早期 MVP 阶段。仓库中已经包含产品方向、MVP 范围、架构设计、共享 Rust core、脚本友好的 CLI，以及一个带本地加密 vault 创建能力的 Tauri + Vue 桌面应用。vault 解锁、凭证管理和更完整的工作流仍在持续实现中。
+本项目当前处于早期 MVP 阶段。仓库中已经包含产品方向、MVP 范围、架构设计、共享 Rust core、脚本友好的 CLI，以及一个支持本地加密 vault 创建、状态查询和基础锁定/解锁流程的 Tauri + Vue 桌面应用。凭证管理和更完整的工作流仍在持续实现中。
 
 ## 为什么需要 kenv
 
@@ -53,8 +53,8 @@ MVP 必须包含桌面端和 CLI 两个入口，但不会承诺完整替代 `ssh
 - [x] 当前可以报告 `missing` 状态的 vault 状态
 - [x] 本地加密 vault 文件格式已实现
 - [x] vault 创建流程已实现
-- [ ] vault 解锁流程已实现
-- [ ] vault 锁定流程已实现
+- [x] vault 解锁流程已实现
+- [x] vault 锁定流程已实现
 
 ### Context 与环境变量
 
@@ -67,6 +67,8 @@ MVP 必须包含桌面端和 CLI 两个入口，但不会承诺完整替代 `ssh
 ### CLI 工作流
 
 - [x] `kenv status` 可输出适合脚本消费的 vault 状态
+- [x] `kenv create`、`kenv unlock` 和 `kenv lock` 已实现
+- [x] `kenv slots`、`kenv keys`、`kenv remove-slot` 和 `kenv sign` 已实现
 - [ ] context 列表命令已实现
 - [ ] context 激活命令已实现
 - [ ] shell 可消费的环境变量导出输出已实现
@@ -75,7 +77,7 @@ MVP 必须包含桌面端和 CLI 两个入口，但不会承诺完整替代 `ssh
 
 - [ ] SSH key material 记录已实现
 - [ ] SSH key reference 记录已实现
-- [ ] SSH key 列表或状态命令已实现
+- [x] SSH key 列表或状态命令已实现
 - [ ] SSH 相关使用时的本地解锁流程已实现
 
 ### 桌面端
@@ -83,7 +85,7 @@ MVP 必须包含桌面端和 CLI 两个入口，但不会承诺完整替代 `ssh
 - [x] Tauri 桌面壳已跑通，并接入共享 core 状态
 - [x] UI 中已展示 vault 状态
 - [x] UI 中的 vault 创建操作已实现
-- [ ] UI 中的 vault 解锁、锁定操作已实现
+- [x] UI 中的 vault 解锁、锁定操作已实现
 - [ ] context 管理 UI 已实现
 - [ ] 环境变量管理 UI 已实现
 - [ ] SSH key 管理 UI 已实现
@@ -170,7 +172,12 @@ pnpm dev:desktop
 pnpm build:frontend
 pnpm test
 pnpm lint
+cargo run -p kenv-cli -- create
 cargo run -p kenv-cli -- status
+cargo run -p kenv-cli -- unlock
+cargo run -p kenv-cli -- lock
+cargo run -p kenv-cli -- slots
+cargo run -p kenv-cli -- keys
 ```
 
 当前应用会按真实状态报告 vault，包括创建前的初始 `vault_status=missing` 状态。不要提交 `.env` 文件或包含明文凭证的测试 fixture。
