@@ -3,7 +3,7 @@ mod ipc;
 use clap::{Parser, Subcommand};
 use kenv_core::{
     create_vault, get_vault_status, list_slots, list_ssh_keys, lock, reauth_password,
-    remove_slot, sign_ssh_key, unlock, KenvError, VaultStatus,
+    remove_slot, sign_ssh_key, KenvError, VaultStatus,
 };
 use zeroize::Zeroizing;
 
@@ -114,29 +114,28 @@ fn create_new_vault() -> Result<(), Box<dyn std::error::Error>> {
 fn unlock_vault() -> Result<(), Box<dyn std::error::Error>> {
     let password = Zeroizing::new(rpassword::prompt_password("Vault password: ")?);
 
-    // Try IPC first. Only fall back to local unlock when the socket is unavailable
-    // (desktop not running). Any other IPC error must surface: a live desktop that
-    // failed to unlock must NOT be masked by a local in-process unlock that dies with
-    // this CLI process, which would print a false `vault_status=unlocked`.
-    let unlock_result = match ipc::IpcClient::unlock(&password) {
-        Ok(()) => Ok(()),
-        Err(ipc::IpcError::SocketUnavailable(_)) => {
-            unlock(&password).map(|_| ()).map_err(|e| e.to_string())
-        }
-        Err(ipc::IpcError::RemoteError(e))
-        | Err(ipc::IpcError::RequestFailed(e))
-        | Err(ipc::IpcError::ResponseFailed(e)) => Err(e),
-    };
-
-    match unlock_result {
-        Ok(_) => {
+    // Unlock is only meaningful against the desktop app, which holds the long-lived
+    // VAULT_STATE. A local in-process unlock would die with this CLI process and print a
+    // false `vault_status=unlocked` that the next command can't observe, so we never fall
+    // back: require the desktop to be running, consistent with list_slots/list_keys.
+    match ipc::IpcClient::unlock(&password) {
+        Ok(()) => {
             println!("vault_status=unlocked");
             Ok(())
         }
-        Err(e) => Err(Box::new(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            e.to_string(),
-        ))),
+        Err(ipc::IpcError::SocketUnavailable(_)) => {
+            eprintln!("Error: desktop app not running");
+            eprintln!("Hint: Start the desktop app to use this command");
+            Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "desktop app not running",
+            )))
+        }
+        Err(ipc::IpcError::RemoteError(e))
+        | Err(ipc::IpcError::RequestFailed(e))
+        | Err(ipc::IpcError::ResponseFailed(e)) => {
+            Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)))
+        }
     }
 }
 

@@ -300,6 +300,62 @@ pub fn base64_encode(data: &[u8]) -> String {
     result
 }
 
+// Base64 decoding for binary data. The desktop emits the `sign` response's signature as a
+// base64 string (see handlers.rs base64_format), so the wire contract is "base64 string".
+fn base64_decode(s: &str) -> Result<Vec<u8>, String> {
+    let mut result = Vec::new();
+    let chars: Vec<_> = s.chars().collect();
+    for chunk in chars.chunks(4) {
+        if chunk.len() < 4 {
+            return Err("invalid base64".to_string());
+        }
+        let c0 = decode_char(chunk[0])?;
+        let c1 = decode_char(chunk[1])?;
+        let c2 = if chunk[2] == '=' {
+            0
+        } else {
+            decode_char(chunk[2])?
+        };
+        let c3 = if chunk[3] == '=' {
+            0
+        } else {
+            decode_char(chunk[3])?
+        };
+
+        let n = ((c0 as u32) << 18) | ((c1 as u32) << 12) | ((c2 as u32) << 6) | (c3 as u32);
+
+        result.push(((n >> 16) & 0xFF) as u8);
+        if chunk[2] != '=' {
+            result.push(((n >> 8) & 0xFF) as u8);
+        }
+        if chunk[3] != '=' {
+            result.push((n & 0xFF) as u8);
+        }
+    }
+    Ok(result)
+}
+
+fn decode_char(c: char) -> Result<u8, String> {
+    match c {
+        'A'..='Z' => Ok((c as u8) - b'A'),
+        'a'..='z' => Ok((c as u8) - b'a' + 26),
+        '0'..='9' => Ok((c as u8) - b'0' + 52),
+        '+' => Ok(62),
+        '/' => Ok(63),
+        _ => Err(format!("invalid base64 char: {}", c)),
+    }
+}
+
+/// serde deserializer: decode a base64 JSON string into raw bytes.
+fn deserialize_base64<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+    let s = String::deserialize(deserializer)?;
+    base64_decode(&s).map_err(serde::de::Error::custom)
+}
+
 #[derive(serde::Deserialize)]
 pub struct SlotInfo {
     pub slot_id: u8,
@@ -327,6 +383,7 @@ struct KeysResponse {
 
 #[derive(serde::Deserialize)]
 struct SignResponse {
+    #[serde(deserialize_with = "deserialize_base64")]
     signature: Vec<u8>,
 }
 
@@ -348,6 +405,26 @@ impl<'de> serde::de::Deserialize<'de> for Response {
             result: helper.result,
             error: helper.error,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sign_response_decodes_base64_signature() {
+        // The desktop serializes `signature` as a base64 string (handlers.rs base64_format).
+        // Verify the CLI deserializer reconstructs the original bytes from that wire form.
+        let original = vec![0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01, 0x02];
+        let wire = format!(
+            "{{\"key_id\":\"k\",\"signature\":\"{}\"}}",
+            base64_encode(&original)
+        );
+
+        let parsed: SignResponse =
+            serde_json::from_str(&wire).expect("base64 signature should deserialize");
+        assert_eq!(parsed.signature, original);
     }
 }
 

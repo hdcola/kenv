@@ -62,19 +62,7 @@ pub fn sign_ssh_key(
     _key_id: &str,
     _data_to_sign: &[u8],
 ) -> Result<SshSignature, KenvError> {
-    #[cfg(test)]
-    {
-        Ok(SshSignature {
-            key_id: _key_id.to_string(),
-            signature: vec![0u8; 64], // Mock Ed25519 signature length
-            signed_at: SystemTime::now(),
-        })
-    }
-
-    #[cfg(not(test))]
-    {
-        Err(KenvError::SshSigningNotImplemented)
-    }
+    Err(KenvError::SshSigningNotImplemented)
 }
 
 /// Get SSH key metadata (non-secret information)
@@ -101,9 +89,8 @@ mod tests {
     }
 
     #[test]
-    fn sign_ssh_key_returns_signature() {
-        let signature = sign_ssh_key("test-key", b"test data").expect("signing failed");
-        assert_eq!(signature.key_id, "test-key");
-        assert_eq!(signature.signature.len(), 64); // Ed25519 signature
+    fn sign_ssh_key_not_implemented() {
+        let error = sign_ssh_key("test-key", b"test data").unwrap_err();
+        assert!(matches!(error, KenvError::SshSigningNotImplemented));
     }
 }

@@ -69,6 +69,14 @@ impl Zeroize for VaultPayload {
             }
         }
         self.slots.clear();
+
+        // Zeroize SSH key material. private_key holds sensitive bytes; public_key is
+        // wiped too for thoroughness. VaultState::drop and lock() rely on this pass.
+        for key in &mut self.ssh_keys {
+            key.private_key.zeroize();
+            key.public_key.zeroize();
+        }
+        self.ssh_keys.clear();
     }
 }
 
@@ -281,4 +289,30 @@ pub fn validate_vault_header(data: &[u8]) -> Result<u8, KenvError> {
     }
 
     Ok(version)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::SystemTime;
+
+    #[test]
+    fn zeroize_clears_ssh_key_material() {
+        let mut payload = VaultPayload::new();
+        payload.ssh_keys.push(ssh::SshKey {
+            key_id: "ed25519".to_string(),
+            name: "test".to_string(),
+            public_key: vec![1u8; 32],
+            private_key: vec![2u8; 64],
+            key_type: ssh::SshKeyType::Ed25519,
+            created_at: SystemTime::now(),
+            last_used: None,
+            disabled: false,
+            require_reauthentication: false,
+        });
+
+        payload.zeroize();
+
+        assert!(payload.ssh_keys.is_empty());
+    }
 }
