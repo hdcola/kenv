@@ -206,3 +206,24 @@ pub fn handle_create(password: String) -> Result<String, String> {
         .map_err(|e| e.to_string())
         .map(|_| "vault_status=locked".to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sign_response_encodes_signature_as_base64() {
+        // Cross-boundary wire contract: verify the desktop serializes the signature field
+        // as the canonical base64 string the CLI's deserializer expects. The companion
+        // test in kenv-cli/src/ipc.rs decodes this exact string back to the original bytes.
+        //
+        // [0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01, 0x02] must serialize to "3q2+7wABAg==".
+        let response = SignResponse {
+            key_id: "k".to_string(),
+            signature: vec![0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01, 0x02],
+        };
+        let wire = serde_json::to_string(&response).expect("serialize failed");
+        let parsed: serde_json::Value = serde_json::from_str(&wire).unwrap();
+        assert_eq!(parsed["signature"], "3q2+7wABAg==");
+    }
+}

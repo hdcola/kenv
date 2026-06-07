@@ -414,16 +414,17 @@ mod tests {
 
     #[test]
     fn sign_response_decodes_base64_signature() {
-        // The desktop serializes `signature` as a base64 string (handlers.rs base64_format).
-        // Verify the CLI deserializer reconstructs the original bytes from that wire form.
+        // Cross-boundary wire contract: use a hardcoded canonical base64 string (not
+        // the CLI's own encoder) as the pivot. The companion desktop-side test in
+        // handlers.rs verifies that base64_format::serialize produces this exact string
+        // for the same input. Together they form a true encode→wire→decode round-trip.
+        //
+        // [0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01, 0x02] encodes to "3q2+7wABAg==".
         let original = vec![0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01, 0x02];
-        let wire = format!(
-            "{{\"key_id\":\"k\",\"signature\":\"{}\"}}",
-            base64_encode(&original)
-        );
+        let wire = r#"{"key_id":"k","signature":"3q2+7wABAg=="}"#;
 
         let parsed: SignResponse =
-            serde_json::from_str(&wire).expect("base64 signature should deserialize");
+            serde_json::from_str(wire).expect("base64 signature should deserialize");
         assert_eq!(parsed.signature, original);
     }
 }
