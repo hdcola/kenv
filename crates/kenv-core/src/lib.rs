@@ -627,3 +627,15 @@ pub fn sign_ssh_key(key_id: &str, data_to_sign: &[u8]) -> Result<ssh::SshSignatu
         Err(KenvError::VaultLocked)
     }
 }
+
+/// Inject an SSH key into the unlocked vault payload. **Test-only helper.**
+///
+/// Requires the vault to already be unlocked (payload present). Used by integration tests
+/// to exercise the sign path before a public add_ssh_key API exists. Mirrors the
+/// `vault::set_test_vault_path` pattern: plain `pub` so integration test binaries can
+/// reach it (integration tests link the lib in non-test mode, so `#[cfg(test)]` is not
+/// compiled into the integration test binary).
+#[doc(hidden)]
+pub fn test_insert_ssh_key(key: ssh::SshKey) {
+    VAULT_STATE.write().payload.as_mut().map(|p| p.ssh_keys.push(key));
+}
