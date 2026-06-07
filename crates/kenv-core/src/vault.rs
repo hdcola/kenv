@@ -102,14 +102,14 @@ pub fn vault_path() -> Result<std::path::PathBuf, KenvError> {
     Ok(home.join(".kenv").join("vault.kenv"))
 }
 
-pub fn write_vault_file(
-    path: &Path,
+/// Serialize the vault header + ciphertext into the on-disk byte layout.
+fn encode_vault_bytes(
     salt: &[u8; 32],
     nonce: &[u8; 12],
     ciphertext: &[u8],
     params: &KdfParams,
     version: u8,
-) -> Result<(), KenvError> {
+) -> Vec<u8> {
     let mut buf = Vec::with_capacity(CIPHERTEXT_OFFSET + ciphertext.len());
     buf.extend_from_slice(MAGIC);
     buf.push(version);
@@ -120,6 +120,31 @@ pub fn write_vault_file(
     buf.extend_from_slice(salt);
     buf.extend_from_slice(nonce);
     buf.extend_from_slice(ciphertext);
+    buf
+}
+
+/// fsync the directory containing `path` so the rename/create is durable.
+#[cfg(unix)]
+fn sync_parent_dir(path: &Path) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::File::open(parent).and_then(|d| d.sync_all())?;
+    }
+    Ok(())
+}
+
+/// Create a brand-new vault file. Fails with `VaultAlreadyExists` if one is already present.
+///
+/// Use [`overwrite_vault_file`] to persist changes to an existing vault.
+pub fn write_vault_file(
+    path: &Path,
+    salt: &[u8; 32],
+    nonce: &[u8; 12],
+    ciphertext: &[u8],
+    params: &KdfParams,
+    version: u8,
+) -> Result<(), KenvError> {
+    let buf = encode_vault_bytes(salt, nonce, ciphertext, params, version);
+
     #[cfg(unix)]
     let open_result = OpenOptions::new()
         .write(true)
@@ -146,16 +171,65 @@ pub fn write_vault_file(
         KenvError::FileOperationFailed
     })?;
 
-    if let Some(parent) = path.parent() {
-        std::fs::File::open(parent)
-            .and_then(|d| d.sync_all())
-            .map_err(|_| {
-                let _ = std::fs::remove_file(path);
-                KenvError::FileOperationFailed
-            })?;
+    if sync_parent_dir(path).is_err() {
+        let _ = std::fs::remove_file(path);
+        return Err(KenvError::FileOperationFailed);
     }
 
     Ok(())
+}
+
+/// Atomically overwrite an existing vault file with new contents.
+///
+/// Writes to a sibling temp file (mode 0600), fsyncs it, then renames it over `path`. A crash
+/// at any point leaves either the old vault or the new one intact — never a truncated file.
+pub fn overwrite_vault_file(
+    path: &Path,
+    salt: &[u8; 32],
+    nonce: &[u8; 12],
+    ciphertext: &[u8],
+    params: &KdfParams,
+    version: u8,
+) -> Result<(), KenvError> {
+    let buf = encode_vault_bytes(salt, nonce, ciphertext, params, version);
+
+    #[cfg(not(unix))]
+    return Err(KenvError::PlatformCapabilityUnavailable);
+
+    #[cfg(unix)]
+    {
+        let mut tmp_os = path.as_os_str().to_os_string();
+        tmp_os.push(".tmp");
+        let tmp_path = std::path::PathBuf::from(tmp_os);
+
+        let write_tmp = || -> Result<(), KenvError> {
+            let mut file = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&tmp_path)
+                .map_err(|_| KenvError::FileOperationFailed)?;
+            file.write_all(&buf).map_err(|_| KenvError::FileOperationFailed)?;
+            file.sync_all().map_err(|_| KenvError::FileOperationFailed)?;
+            Ok(())
+        };
+
+        if let Err(e) = write_tmp() {
+            let _ = std::fs::remove_file(&tmp_path);
+            return Err(e);
+        }
+
+        if std::fs::rename(&tmp_path, path).is_err() {
+            let _ = std::fs::remove_file(&tmp_path);
+            return Err(KenvError::FileOperationFailed);
+        }
+
+        // Best-effort durability of the rename itself; the data is already fsynced.
+        let _ = sync_parent_dir(path);
+
+        Ok(())
+    }
 }
 
 pub fn validate_vault_header(data: &[u8]) -> Result<u8, KenvError> {

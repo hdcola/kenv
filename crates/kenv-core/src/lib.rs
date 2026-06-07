@@ -47,7 +47,6 @@ struct VaultState {
     salt: Option<[u8; 32]>,
     kdf_params: Option<KdfParams>,
     vault_path: Option<std::path::PathBuf>,
-    unlocked_by_thread_id: Option<std::thread::ThreadId>,
 }
 
 impl Default for VaultState {
@@ -61,7 +60,6 @@ impl Default for VaultState {
             salt: None,
             kdf_params: None,
             vault_path: None,
-            unlocked_by_thread_id: None,
         }
     }
 }
@@ -87,7 +85,6 @@ static VAULT_STATE: RwLock<VaultState> = RwLock::new(VaultState {
     salt: None,
     kdf_params: None,
     vault_path: None,
-    unlocked_by_thread_id: None,
 });
 
 #[derive(Debug, Error)]
@@ -118,6 +115,8 @@ pub enum KenvError {
     EncryptionError,
     #[error("password must not be empty")]
     WeakPassword,
+    #[error("cannot remove the last password slot")]
+    LastPasswordSlot,
 }
 
 pub fn create_vault(password: &str) -> Result<(), KenvError> {
@@ -255,7 +254,6 @@ pub fn unlock(password: &str) -> Result<VaultStatus, KenvError> {
         state.salt = Some(salt_array);
         state.kdf_params = Some(params);
         state.vault_path = Some(path.clone());
-        state.unlocked_by_thread_id = Some(std::thread::current().id());
     }
 
     Ok(VaultStatus::Unlocked)
@@ -284,9 +282,9 @@ fn persist_vault_state() -> Result<(), KenvError> {
     let ciphertext =
         crypto::encrypt(&dek, &nonce, &plaintext).map_err(|_| KenvError::EncryptionError)?;
 
-    // Write back to disk with v2 format
+    // Overwrite the existing vault atomically with v2 format
     let vault_path = vault::vault_path()?;
-    vault::write_vault_file(&vault_path, &salt, &nonce, &ciphertext, &kdf_params, vault::FILE_VERSION_V2)
+    vault::overwrite_vault_file(&vault_path, &salt, &nonce, &ciphertext, &kdf_params, vault::FILE_VERSION_V2)
 }
 
 pub fn get_vault_status() -> Result<VaultStatus, KenvError> {
@@ -359,8 +357,13 @@ pub fn add_slot(slot: slots::UnlockSlot) -> Result<(), KenvError> {
     persist_vault_state()
 }
 
-fn is_password_reauthenticated() -> bool {
-    if let Some(reauth_time) = VAULT_STATE.read().reauthenticated_at {
+/// Whether a recorded reauthentication timestamp is still within the 5-minute window.
+///
+/// Takes the timestamp by value so callers can pass a field read from a `VAULT_STATE` guard
+/// they already hold — acquiring a fresh lock here would deadlock a caller holding the write
+/// lock, since `parking_lot::RwLock` is not reentrant.
+fn reauth_window_valid(reauth_time: Option<SystemTime>) -> bool {
+    if let Some(reauth_time) = reauth_time {
         if let Ok(elapsed) = SystemTime::now().duration_since(reauth_time) {
             elapsed < std::time::Duration::from_secs(300) // 5-minute window
         } else {
@@ -388,6 +391,10 @@ pub fn remove_slot(slot_id: u8) -> Result<(), KenvError> {
             return Err(KenvError::VaultLocked);
         }
 
+        // Read reauth status from the guard we already hold; calling a helper that re-locks
+        // VAULT_STATE here would deadlock (the write lock is held below).
+        let reauthenticated = reauth_window_valid(state.reauthenticated_at);
+
         if let Some(ref mut payload) = state.payload {
             // Find the slot to remove
             let slot_index = payload.slots.iter().position(|s| s.slot_id == slot_id);
@@ -398,8 +405,23 @@ pub fn remove_slot(slot_id: u8) -> Result<(), KenvError> {
 
             // Check if removing a password slot (requires reauthentication)
             let is_password_slot = slot.slot_type == slots::SlotType::Password;
+            let is_enabled_password_slot = is_password_slot && !slot.disabled;
 
-            if is_password_slot && !is_password_reauthenticated() {
+            // Recovery mandate: never let the vault lose its last usable password slot,
+            // which would make it permanently unlockable. Checked before reauth so the
+            // operation is rejected up front.
+            if is_enabled_password_slot {
+                let enabled_password_count = payload
+                    .slots
+                    .iter()
+                    .filter(|s| s.slot_type == slots::SlotType::Password && !s.disabled)
+                    .count();
+                if enabled_password_count <= 1 {
+                    return Err(KenvError::LastPasswordSlot);
+                }
+            }
+
+            if is_password_slot && !reauthenticated {
                 return Err(KenvError::UnlockFailed); // Requires password reauthentication
             }
 
@@ -480,13 +502,12 @@ pub fn reauth_password(password: &str) -> Result<(), KenvError> {
     {
         let state = VAULT_STATE.read();
 
-        // Require vault to be unlocked, same vault path, and unlocked by same thread
-        let current_thread_id = std::thread::current().id();
+        // Require vault to be unlocked and for the same vault path. The unlocking thread is
+        // intentionally NOT checked: VAULT_STATE is process-global, and the desktop socket
+        // server handles each connection on a fresh thread, so unlock and reauth legitimately
+        // run on different threads.
         let current_path = vault::vault_path()?;
-        if state.payload.is_none()
-            || state.vault_path.as_ref() != Some(&current_path)
-            || state.unlocked_by_thread_id != Some(current_thread_id)
-        {
+        if state.payload.is_none() || state.vault_path.as_ref() != Some(&current_path) {
             return Err(KenvError::VaultLocked);
         }
 
@@ -593,8 +614,9 @@ pub fn sign_ssh_key(key_id: &str, data_to_sign: &[u8]) -> Result<ssh::SshSignatu
 
         match key {
             Some(key) => {
-                // Check if key requires reauthentication
-                if key.require_reauthentication && !is_password_reauthenticated() {
+                // Check if key requires reauthentication. Read the timestamp from the guard we
+                // already hold rather than re-locking VAULT_STATE.
+                if key.require_reauthentication && !reauth_window_valid(state.reauthenticated_at) {
                     return Err(KenvError::UnlockFailed);
                 }
                 ssh::sign_ssh_key(key_id, data_to_sign)

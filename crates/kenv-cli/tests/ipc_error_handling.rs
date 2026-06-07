@@ -75,3 +75,26 @@ fn ipc_error_is_error_trait_implemented() {
     );
     assert_eq!(err.to_string(), "test error");
 }
+
+/// The unlock/lock/create CLI handlers fall back to local kenv_core ONLY when the socket is
+/// unavailable (desktop not running). Any other IPC error must surface so a live-desktop
+/// failure is never masked by a false `vault_status=unlocked/locked`. This is the predicate
+/// those handlers branch on.
+#[test]
+fn only_socket_unavailable_permits_local_fallback() {
+    assert!(
+        IpcError::SocketUnavailable("desktop not running".into()).is_socket_unavailable(),
+        "socket-unavailable must permit local fallback"
+    );
+
+    for err in [
+        IpcError::RemoteError("wrong password".into()),
+        IpcError::RequestFailed("write timeout".into()),
+        IpcError::ResponseFailed("parse failed".into()),
+    ] {
+        assert!(
+            !err.is_socket_unavailable(),
+            "non-socket error {err:?} must NOT permit local fallback"
+        );
+    }
+}

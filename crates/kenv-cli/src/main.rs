@@ -114,13 +114,19 @@ fn create_new_vault() -> Result<(), Box<dyn std::error::Error>> {
 fn unlock_vault() -> Result<(), Box<dyn std::error::Error>> {
     let password = Zeroizing::new(rpassword::prompt_password("Vault password: ")?);
 
-    // Try IPC first; fall back to local unlock if desktop not running.
-    // Unlock is safe to fallback on any IPC error because it's idempotent:
-    // unlocking an already-unlocked vault succeeds.
-    let unlock_result = ipc::IpcClient::unlock(&password).or_else(|_| {
-        // Fallback to local unlock
-        unlock(&password).map(|_| ()).map_err(|e| e.to_string())
-    });
+    // Try IPC first. Only fall back to local unlock when the socket is unavailable
+    // (desktop not running). Any other IPC error must surface: a live desktop that
+    // failed to unlock must NOT be masked by a local in-process unlock that dies with
+    // this CLI process, which would print a false `vault_status=unlocked`.
+    let unlock_result = match ipc::IpcClient::unlock(&password) {
+        Ok(()) => Ok(()),
+        Err(ipc::IpcError::SocketUnavailable(_)) => {
+            unlock(&password).map(|_| ()).map_err(|e| e.to_string())
+        }
+        Err(ipc::IpcError::RemoteError(e))
+        | Err(ipc::IpcError::RequestFailed(e))
+        | Err(ipc::IpcError::ResponseFailed(e)) => Err(e),
+    };
 
     match unlock_result {
         Ok(_) => {
@@ -135,12 +141,17 @@ fn unlock_vault() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn lock_vault() -> Result<(), Box<dyn std::error::Error>> {
-    // Try IPC first; fall back to local lock if desktop not running.
-    // Lock is safe to fallback on any IPC error because it's idempotent:
-    // locking an already-locked vault succeeds.
-    let lock_result = ipc::IpcClient::lock().or_else(|_| {
-        lock().map_err(|e| e.to_string())
-    });
+    // Try IPC first. Only fall back to local lock when the socket is unavailable
+    // (desktop not running). Any other IPC error must surface: a live desktop that
+    // failed to lock must NOT be masked by a local in-process lock, which would print
+    // a false `vault_status=locked` while the desktop stays unlocked.
+    let lock_result = match ipc::IpcClient::lock() {
+        Ok(()) => Ok(()),
+        Err(ipc::IpcError::SocketUnavailable(_)) => lock().map_err(|e| e.to_string()),
+        Err(ipc::IpcError::RemoteError(e))
+        | Err(ipc::IpcError::RequestFailed(e))
+        | Err(ipc::IpcError::ResponseFailed(e)) => Err(e),
+    };
 
     match lock_result {
         Ok(_) => {

@@ -1,6 +1,5 @@
 use kenv_core::{
     add_slot, list_slots, remove_slot, rename_slot,
-    KenvError, VaultStatus,
     slots::{UnlockSlot, SlotType},
 };
 use serial_test::serial;
@@ -156,6 +155,245 @@ fn newly_created_vault_reauth_fails_with_wrong_password() {
     assert_eq!(error.to_string(), "unlock failed");
 
     // Cleanup
+    lock().ok();
+    vault::clear_test_vault_path();
+}
+
+/// Build a non-password unlock slot for tests that only need an extra slot to mutate.
+fn ctap2_slot(slot_id: u8, label: &str) -> UnlockSlot {
+    UnlockSlot {
+        slot_id,
+        slot_type: SlotType::Ctap2,
+        label: label.to_string(),
+        created_at: SystemTime::now(),
+        password: None,
+        ctap2: None,
+        touchid: None,
+        requires_pin: false,
+        requires_touch: true,
+        pin_attempts_left: None,
+        last_used: None,
+        disabled: false,
+    }
+}
+
+/// Build a (metadata-only) password unlock slot used to exercise the last-password-slot guard.
+fn password_slot(slot_id: u8, label: &str) -> UnlockSlot {
+    UnlockSlot {
+        slot_id,
+        slot_type: SlotType::Password,
+        label: label.to_string(),
+        created_at: SystemTime::now(),
+        password: None,
+        ctap2: None,
+        touchid: None,
+        requires_pin: false,
+        requires_touch: false,
+        pin_attempts_left: None,
+        last_used: None,
+        disabled: false,
+    }
+}
+
+/// Create a fast vault (cheap test KDF params) at `path` and route `vault_path()` to it on the
+/// current thread. Using `for_tests` params keeps these serial tests off the slow Argon2 path.
+fn create_test_vault(path: &std::path::Path, password: &str) {
+    use kenv_core::{create_vault_at, crypto::KdfParams, vault};
+    create_vault_at(path, password, &KdfParams::for_tests()).expect("failed to create vault");
+    vault::set_test_vault_path(path.to_path_buf());
+}
+
+// --- Issue 1: success-path persistence survives a lock/unlock cycle ---
+
+#[test]
+#[serial]
+fn add_slot_persists_across_lock_unlock() {
+    use tempfile::TempDir;
+    use kenv_core::{add_slot, lock, unlock, vault};
+
+    vault::clear_test_vault_path();
+    lock().ok();
+
+    let temp_dir = TempDir::new().unwrap();
+    let vault_path = temp_dir.path().join("vault.kenv");
+    let password = "test_password_123";
+
+    create_test_vault(&vault_path, password);
+    unlock(password).expect("failed to unlock");
+
+    // Before the persistence fix this returned VaultAlreadyExists.
+    add_slot(ctap2_slot(2, "yubikey")).expect("add_slot should persist");
+
+    // Reload from disk and confirm the new slot survived.
+    lock().ok();
+    unlock(password).expect("failed to re-unlock");
+    let slots = list_slots().expect("list_slots after reload");
+    assert!(slots.iter().any(|s| s.slot_id == 2), "added slot must survive reload");
+
+    lock().ok();
+    vault::clear_test_vault_path();
+}
+
+#[test]
+#[serial]
+fn rename_slot_persists_across_lock_unlock() {
+    use tempfile::TempDir;
+    use kenv_core::{lock, unlock, vault};
+
+    vault::clear_test_vault_path();
+    lock().ok();
+
+    let temp_dir = TempDir::new().unwrap();
+    let vault_path = temp_dir.path().join("vault.kenv");
+    let password = "test_password_123";
+
+    create_test_vault(&vault_path, password);
+    unlock(password).expect("failed to unlock");
+
+    rename_slot(1, "renamed".to_string()).expect("rename_slot should persist");
+
+    lock().ok();
+    unlock(password).expect("failed to re-unlock");
+    let slots = list_slots().expect("list_slots after reload");
+    let slot = slots.iter().find(|s| s.slot_id == 1).expect("slot 1 present");
+    assert_eq!(slot.label, "renamed", "renamed label must survive reload");
+
+    lock().ok();
+    vault::clear_test_vault_path();
+}
+
+#[test]
+#[serial]
+fn remove_slot_persists_across_lock_unlock() {
+    use tempfile::TempDir;
+    use kenv_core::{add_slot, lock, unlock, vault};
+
+    vault::clear_test_vault_path();
+    lock().ok();
+
+    let temp_dir = TempDir::new().unwrap();
+    let vault_path = temp_dir.path().join("vault.kenv");
+    let password = "test_password_123";
+
+    create_test_vault(&vault_path, password);
+    unlock(password).expect("failed to unlock");
+
+    // Add a non-password slot, then remove it (no reauth, no last-slot guard).
+    add_slot(ctap2_slot(2, "yubikey")).expect("add_slot should persist");
+    remove_slot(2).expect("remove_slot should persist");
+
+    lock().ok();
+    unlock(password).expect("failed to re-unlock");
+    let slots = list_slots().expect("list_slots after reload");
+    assert!(slots.iter().all(|s| s.slot_id != 2), "removed slot must stay gone after reload");
+    assert!(slots.iter().any(|s| s.slot_id == 1), "password slot must remain");
+
+    lock().ok();
+    vault::clear_test_vault_path();
+}
+
+// --- Issue 4: the last enabled password slot cannot be removed ---
+
+#[test]
+#[serial]
+fn cannot_remove_last_password_slot() {
+    use tempfile::TempDir;
+    use kenv_core::{lock, unlock, vault};
+
+    vault::clear_test_vault_path();
+    lock().ok();
+
+    let temp_dir = TempDir::new().unwrap();
+    let vault_path = temp_dir.path().join("vault.kenv");
+    let password = "test_password_123";
+
+    create_test_vault(&vault_path, password);
+    unlock(password).expect("failed to unlock");
+
+    // Guard fires before the reauth check, so no reauth is needed to observe it.
+    let error = remove_slot(1).unwrap_err();
+    assert_eq!(error.to_string(), "cannot remove the last password slot");
+
+    // Slot must still be there.
+    let slots = list_slots().expect("list_slots");
+    assert!(slots.iter().any(|s| s.slot_id == 1), "last password slot must survive");
+
+    lock().ok();
+    vault::clear_test_vault_path();
+}
+
+#[test]
+#[serial]
+fn can_remove_password_slot_when_another_remains() {
+    use tempfile::TempDir;
+    use kenv_core::{add_slot, lock, reauth_password, unlock, vault};
+
+    vault::clear_test_vault_path();
+    lock().ok();
+
+    let temp_dir = TempDir::new().unwrap();
+    let vault_path = temp_dir.path().join("vault.kenv");
+    let password = "test_password_123";
+
+    create_test_vault(&vault_path, password);
+    unlock(password).expect("failed to unlock");
+
+    // Two enabled password slots now exist; removing one is allowed (with reauth).
+    add_slot(password_slot(2, "backup")).expect("add second password slot");
+    reauth_password(password).expect("reauth should succeed");
+    remove_slot(1).expect("removing a non-last password slot should succeed");
+
+    lock().ok();
+    unlock(password).expect("failed to re-unlock");
+    let slots = list_slots().expect("list_slots after reload");
+    assert!(slots.iter().all(|s| s.slot_id != 1), "removed slot stays gone");
+    assert!(slots.iter().any(|s| s.slot_id == 2), "remaining password slot persists");
+
+    lock().ok();
+    vault::clear_test_vault_path();
+}
+
+// --- Issue 3: reauth works on a different thread than unlock ---
+
+#[test]
+#[serial]
+fn reauth_succeeds_on_different_thread_than_unlock() {
+    use tempfile::TempDir;
+    use kenv_core::{lock, reauth_password, unlock, vault};
+
+    vault::clear_test_vault_path();
+    lock().ok();
+
+    let temp_dir = TempDir::new().unwrap();
+    let vault_path = temp_dir.path().join("vault.kenv");
+    let password = "test_password_123";
+
+    create_test_vault(&vault_path, password);
+
+    // Unlock on one spawned thread...
+    {
+        let path = vault_path.clone();
+        std::thread::spawn(move || {
+            // TEST_VAULT_PATH is thread-local, so re-inject it on this thread.
+            vault::set_test_vault_path(path);
+            unlock(password).expect("unlock on thread A");
+        })
+        .join()
+        .unwrap();
+    }
+
+    // ...and reauth on a *different* thread. Before the fix this returned "vault is locked"
+    // because of the thread-id binding.
+    {
+        let path = vault_path.clone();
+        std::thread::spawn(move || {
+            vault::set_test_vault_path(path);
+            reauth_password(password).expect("reauth should succeed cross-thread");
+        })
+        .join()
+        .unwrap();
+    }
+
     lock().ok();
     vault::clear_test_vault_path();
 }
