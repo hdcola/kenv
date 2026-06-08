@@ -1,61 +1,44 @@
-use kenv_core::{create_vault, unlock, lock, KenvError};
+use kenv_core::{create_vault_at, crypto::KdfParams, unlock, vault, KenvError};
+use serial_test::serial;
+use tempfile::TempDir;
 
-fn setup_vault(password: &str) {
-    let vault_path = dirs::home_dir().unwrap().join(".kenv").join("vault.kenv");
-    let _ = lock();
-    // Remove file if it exists
-    for _ in 0..3 {
-        if std::fs::remove_file(&vault_path).is_ok() {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
-    create_vault(password).ok();
+fn setup(password: &str) -> TempDir {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("vault.kenv");
+    create_vault_at(&path, password, &KdfParams::for_tests())
+        .expect("test vault setup failed");
+    vault::set_test_vault_path(path);
+    dir
 }
 
-fn cleanup() {
-    let vault_path = dirs::home_dir().unwrap().join(".kenv").join("vault.kenv");
-    let _ = lock();
-    for _ in 0..3 {
-        if std::fs::remove_file(&vault_path).is_ok() {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
+fn teardown() {
+    kenv_core::lock().ok();
+    vault::clear_test_vault_path();
 }
 
 #[test]
+#[serial]
 fn unlock_with_wrong_password_fails() {
-    setup_vault("correct-password");
-
-    // Attempt unlock with wrong password
-    let result = unlock("wrong-password");
-    assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), KenvError::UnlockFailed));
-
-    cleanup();
+    let _dir = setup("correct-password");
+    let err = unlock("wrong-password").unwrap_err();
+    assert!(matches!(err, KenvError::UnlockFailed));
+    teardown();
 }
 
 #[test]
+#[serial]
 fn unlock_with_empty_password_fails() {
-    setup_vault("my-password");
-
-    // Attempt unlock with empty password
-    let result = unlock("");
-    assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), KenvError::UnlockFailed));
-
-    cleanup();
+    let _dir = setup("my-password");
+    let err = unlock("").unwrap_err();
+    assert!(matches!(err, KenvError::UnlockFailed));
+    teardown();
 }
 
 #[test]
+#[serial]
 fn unlock_with_slightly_different_password_fails() {
-    setup_vault("password123");
-
-    // Attempt unlock with password that differs by one character
-    let result = unlock("password124");
-    assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), KenvError::UnlockFailed));
-
-    cleanup();
+    let _dir = setup("password123");
+    let err = unlock("password124").unwrap_err();
+    assert!(matches!(err, KenvError::UnlockFailed));
+    teardown();
 }
