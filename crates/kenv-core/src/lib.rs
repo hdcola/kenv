@@ -330,6 +330,7 @@ pub fn unlock(password: &str) -> Result<VaultStatus, KenvError> {
 /// `slots::touchid::unwrap_dek` which triggers a biometric prompt. Returns
 /// `UnlockFailed` if no TouchID slot can be unwrapped, or
 /// `PlatformCapabilityUnavailable` on non-macOS builds.
+#[cfg(target_os = "macos")]
 pub fn unlock_with_touchid() -> Result<VaultStatus, KenvError> {
     let path = vault::vault_path()?;
     if !path.exists() {
@@ -409,6 +410,11 @@ pub fn unlock_with_touchid() -> Result<VaultStatus, KenvError> {
     }
 
     Ok(VaultStatus::Unlocked)
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn unlock_with_touchid() -> Result<VaultStatus, KenvError> {
+    Err(KenvError::PlatformCapabilityUnavailable)
 }
 
 pub fn lock() -> Result<(), KenvError> {
@@ -514,6 +520,7 @@ pub struct SlotInfo {
 /// Requires vault to be unlocked. Low-risk operation (no password reauthentication).
 /// Returns error if vault is locked or slot_id already exists.
 pub fn add_slot(slot: slots::UnlockSlot) -> Result<(), KenvError> {
+    let new_slot_id = slot.slot_id;
     {
         let mut state = VAULT_STATE.write();
 
@@ -525,7 +532,7 @@ pub fn add_slot(slot: slots::UnlockSlot) -> Result<(), KenvError> {
         // Add slot to payload
         if let Some(ref mut payload) = state.payload {
             // Check slot_id is not already in use
-            if payload.slots.iter().any(|s| s.slot_id == slot.slot_id) {
+            if payload.slots.iter().any(|s| s.slot_id == new_slot_id) {
                 return Err(KenvError::EncryptionError); // Reuse error for "slot already exists"
             }
             payload.slots.push(slot);
@@ -533,8 +540,16 @@ pub fn add_slot(slot: slots::UnlockSlot) -> Result<(), KenvError> {
             return Err(KenvError::VaultLocked);
         }
     }
-    // Drop write lock before persisting
-    persist_vault_state()
+    // Drop write lock before persisting. Roll back the in-memory change on failure so the
+    // process state cannot permanently diverge from what is on disk.
+    if let Err(e) = persist_vault_state() {
+        let mut state = VAULT_STATE.write();
+        if let Some(ref mut payload) = state.payload {
+            payload.slots.retain(|s| s.slot_id != new_slot_id);
+        }
+        return Err(e);
+    }
+    Ok(())
 }
 
 /// Whether a recorded reauthentication timestamp is still within the 5-minute window.
@@ -563,6 +578,8 @@ fn reauth_window_valid(reauth_time: Option<SystemTime>) -> bool {
 /// If high-risk operation is detected, returns KenvError::UnlockFailed with indicator.
 /// Caller should invoke reauth_password() separately, then retry remove_slot().
 pub fn remove_slot(slot_id: u8) -> Result<(), KenvError> {
+    // Save removed slot for rollback if persist fails.
+    let mut removed: Option<(usize, slots::UnlockSlot)> = None;
     {
         let mut state = VAULT_STATE.write();
 
@@ -580,15 +597,14 @@ pub fn remove_slot(slot_id: u8) -> Result<(), KenvError> {
 
         if let Some(ref mut payload) = state.payload {
             // Find the slot to remove
-            let slot_index = payload.slots.iter().position(|s| s.slot_id == slot_id);
-            let slot = match slot_index {
-                Some(idx) => &payload.slots[idx],
+            let slot_index = match payload.slots.iter().position(|s| s.slot_id == slot_id) {
+                Some(idx) => idx,
                 None => return Err(KenvError::EncryptionError), // Slot not found
             };
 
             // Check if removing a password slot (requires reauthentication)
-            let is_password_slot = slot.slot_type == slots::SlotType::Password;
-            let is_enabled_password_slot = is_password_slot && !slot.disabled;
+            let is_password_slot = payload.slots[slot_index].slot_type == slots::SlotType::Password;
+            let is_enabled_password_slot = is_password_slot && !payload.slots[slot_index].disabled;
 
             // Recovery mandate: never let the vault lose its last usable password slot,
             // which would make it permanently unlockable. Checked before reauth so the
@@ -610,14 +626,26 @@ pub fn remove_slot(slot_id: u8) -> Result<(), KenvError> {
                 return Err(KenvError::UnlockFailed); // Requires password reauthentication
             }
 
-            // Remove the slot
-            payload.slots.remove(slot_index.unwrap());
+            // Clone before removing so we can restore if persist fails.
+            let slot_snapshot = payload.slots[slot_index].clone();
+            payload.slots.remove(slot_index);
+            removed = Some((slot_index, slot_snapshot));
         } else {
             return Err(KenvError::VaultLocked);
         }
     }
-    // Drop write lock before persisting
-    persist_vault_state()
+    // Drop write lock before persisting. Roll back the in-memory change on failure so the
+    // process state cannot permanently diverge from what is on disk.
+    if let Err(e) = persist_vault_state() {
+        if let Some((idx, slot)) = removed {
+            let mut state = VAULT_STATE.write();
+            if let Some(ref mut payload) = state.payload {
+                payload.slots.insert(idx, slot);
+            }
+        }
+        return Err(e);
+    }
+    Ok(())
 }
 
 /// List all unlock slots with metadata (non-secret information)
@@ -654,6 +682,7 @@ pub fn list_slots() -> Result<Vec<SlotInfo>, KenvError> {
 ///
 /// Requires vault to be unlocked. Low-risk operation (no password reauthentication).
 pub fn rename_slot(slot_id: u8, new_label: String) -> Result<(), KenvError> {
+    let old_label: Option<String>;
     {
         let mut state = VAULT_STATE.write();
 
@@ -665,7 +694,7 @@ pub fn rename_slot(slot_id: u8, new_label: String) -> Result<(), KenvError> {
         if let Some(ref mut payload) = state.payload {
             // Find and rename the slot
             if let Some(slot) = payload.slots.iter_mut().find(|s| s.slot_id == slot_id) {
-                slot.label = new_label;
+                old_label = Some(std::mem::replace(&mut slot.label, new_label));
             } else {
                 return Err(KenvError::EncryptionError); // Slot not found
             }
@@ -673,8 +702,20 @@ pub fn rename_slot(slot_id: u8, new_label: String) -> Result<(), KenvError> {
             return Err(KenvError::VaultLocked);
         }
     }
-    // Drop write lock before persisting
-    persist_vault_state()
+    // Drop write lock before persisting. Roll back the in-memory change on failure so the
+    // process state cannot permanently diverge from what is on disk.
+    if let Err(e) = persist_vault_state() {
+        if let Some(prev) = old_label {
+            let mut state = VAULT_STATE.write();
+            if let Some(ref mut payload) = state.payload {
+                if let Some(slot) = payload.slots.iter_mut().find(|s| s.slot_id == slot_id) {
+                    slot.label = prev;
+                }
+            }
+        }
+        return Err(e);
+    }
+    Ok(())
 }
 
 /// Reauthenticate with password for high-risk operations

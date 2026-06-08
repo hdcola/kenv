@@ -48,7 +48,7 @@ pub fn handle_list_slots() -> Result<ListSlotsResponse, String> {
         .into_iter()
         .map(|s| SlotInfo {
             slot_id: s.slot_id,
-            slot_type: format!("{:?}", s.slot_type),
+            slot_type: s.slot_type.as_script_value().to_string(),
             label: s.label,
             last_used: s.last_used.and_then(|t| {
                 t.duration_since(std::time::UNIX_EPOCH)

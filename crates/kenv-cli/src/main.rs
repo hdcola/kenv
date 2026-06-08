@@ -165,10 +165,9 @@ fn print_slots() -> Result<(), Box<dyn std::error::Error>> {
         Ok(slots) => {
             println!("slot_count={}", slots.len());
             for slot in slots {
-                println!(
-                    "slot_id={} type={} label={}",
-                    slot.slot_id, slot.slot_type, slot.label
-                );
+                println!("slot_id={}", slot.slot_id);
+                println!("slot_type={}", slot.slot_type);
+                println!("slot_label={}", slot.label);
             }
             Ok(())
         }
@@ -216,7 +215,8 @@ fn print_ssh_keys() -> Result<(), Box<dyn std::error::Error>> {
         Ok(keys) => {
             println!("key_count={}", keys.len());
             for key in keys {
-                println!("key_id={} name={}", key.key_id, key.name);
+                println!("key_id={}", key.key_id);
+                println!("key_name={}", key.name);
             }
             Ok(())
         }

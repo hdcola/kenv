@@ -27,6 +27,14 @@ impl SlotType {
             _ => None,
         }
     }
+
+    pub fn as_script_value(&self) -> &'static str {
+        match self {
+            Self::Password => "password",
+            Self::Ctap2 => "ctap2",
+            Self::TouchId => "touchid",
+        }
+    }
 }
 
 /// Metadata for password-based unlock
