@@ -98,8 +98,9 @@ fn handle_client(
     let request_bytes = read_message(socket)?;
     let request_str = Zeroizing::new(String::from_utf8(request_bytes)?);
     let request: Request = serde_json::from_str(&request_str)?;
+    drop(request_str); // zero and free the raw JSON bytes before processing
 
-    let response = handle_request(&request, &app_handle);
+    let response = handle_request(request, &app_handle);
 
     let response_json = serde_json::to_string(&response)?;
     send_message(socket, response_json.as_bytes())?;
@@ -156,9 +157,10 @@ fn emit_state_changed(app_handle: &tauri::AppHandle) {
     let _ = app_handle.emit("vault-state-changed", ());
 }
 
-fn handle_request(req: &Request, app_handle: &tauri::AppHandle) -> Response {
-    match req.method.as_str() {
-        "unlock" => match serde_json::from_value::<handlers::UnlockRequest>(req.params.clone()) {
+fn handle_request(req: Request, app_handle: &tauri::AppHandle) -> Response {
+    let Request { method, params } = req;
+    match method.as_str() {
+        "unlock" => match serde_json::from_value::<handlers::UnlockRequest>(params) {
             Ok(unlock_req) => match handlers::handle_unlock(unlock_req) {
                 Ok(result) => {
                     emit_state_changed(app_handle);
@@ -204,49 +206,54 @@ fn handle_request(req: &Request, app_handle: &tauri::AppHandle) -> Response {
                 error: Some(e),
             },
         },
-        "remove_slot" => {
-            match serde_json::from_value::<handlers::RemoveSlotRequest>(req.params.clone()) {
-                Ok(remove_req) => match handlers::handle_remove_slot(remove_req) {
-                    Ok(result) => {
-                        emit_state_changed(app_handle);
-                        Response {
-                            success: true,
-                            result: Some(Value::String(result)),
-                            error: None,
-                        }
+        "remove_slot" => match serde_json::from_value::<handlers::RemoveSlotRequest>(params) {
+            Ok(remove_req) => match handlers::handle_remove_slot(remove_req) {
+                Ok(result) => {
+                    emit_state_changed(app_handle);
+                    Response {
+                        success: true,
+                        result: Some(Value::String(result)),
+                        error: None,
                     }
-                    Err(e) => Response {
-                        success: false,
-                        result: None,
-                        error: Some(e),
-                    },
-                },
-                Err(e) => Response {
-                    success: false,
-                    result: None,
-                    error: Some(format!("invalid params: {}", e)),
-                },
-            }
-        }
-        "reauth_password" => match req.params.get("password").and_then(|v| v.as_str()) {
-            Some(password) => match handlers::handle_reauth_password(password.to_string()) {
-                Ok(result) => Response {
-                    success: true,
-                    result: Some(Value::String(result)),
-                    error: None,
-                },
+                }
                 Err(e) => Response {
                     success: false,
                     result: None,
                     error: Some(e),
                 },
             },
-            None => Response {
+            Err(e) => Response {
                 success: false,
                 result: None,
-                error: Some("missing password parameter".to_string()),
+                error: Some(format!("invalid params: {}", e)),
             },
         },
+        "reauth_password" => {
+            let pw = params
+                .get("password")
+                .and_then(|v| v.as_str())
+                .map(|s| Zeroizing::new(s.to_string()));
+            drop(params);
+            match pw {
+                Some(pw) => match handlers::handle_reauth_password(pw) {
+                    Ok(result) => Response {
+                        success: true,
+                        result: Some(Value::String(result)),
+                        error: None,
+                    },
+                    Err(e) => Response {
+                        success: false,
+                        result: None,
+                        error: Some(e),
+                    },
+                },
+                None => Response {
+                    success: false,
+                    result: None,
+                    error: Some("missing password parameter".to_string()),
+                },
+            }
+        }
         "status" => match handlers::handle_status() {
             Ok(result) => Response {
                 success: true,
@@ -274,32 +281,39 @@ fn handle_request(req: &Request, app_handle: &tauri::AppHandle) -> Response {
                 error: Some(e),
             },
         },
-        "create" => match req.params.get("password").and_then(|v| v.as_str()) {
-            Some(password) => match handlers::handle_create(password.to_string()) {
-                Ok(result) => {
-                    emit_state_changed(app_handle);
-                    Response {
-                        success: true,
-                        result: Some(Value::String(result)),
-                        error: None,
+        "create" => {
+            let pw = params
+                .get("password")
+                .and_then(|v| v.as_str())
+                .map(|s| Zeroizing::new(s.to_string()));
+            drop(params);
+            match pw {
+                Some(pw) => match handlers::handle_create(pw) {
+                    Ok(result) => {
+                        emit_state_changed(app_handle);
+                        Response {
+                            success: true,
+                            result: Some(Value::String(result)),
+                            error: None,
+                        }
                     }
-                }
-                Err(e) => Response {
+                    Err(e) => Response {
+                        success: false,
+                        result: None,
+                        error: Some(e),
+                    },
+                },
+                None => Response {
                     success: false,
                     result: None,
-                    error: Some(e),
+                    error: Some("missing password parameter".to_string()),
                 },
-            },
-            None => Response {
-                success: false,
-                result: None,
-                error: Some("missing password parameter".to_string()),
-            },
-        },
+            }
+        }
         _ => Response {
             success: false,
             result: None,
-            error: Some(format!("unknown method: {}", req.method)),
+            error: Some(format!("unknown method: {}", method)),
         },
     }
 }

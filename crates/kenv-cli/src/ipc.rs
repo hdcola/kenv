@@ -125,6 +125,7 @@ impl IpcClient {
             "params": params
         });
         let request_str = Zeroizing::new(request.to_string());
+        drop(request); // drop the Value (including params/password) before the send
 
         send_message(&mut stream, request_str.as_bytes())
             .map_err(|e| IpcError::RequestFailed(format!("failed to send request: {}", e)))?;

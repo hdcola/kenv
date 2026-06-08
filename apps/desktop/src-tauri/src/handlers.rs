@@ -83,8 +83,7 @@ pub fn handle_remove_slot(req: RemoveSlotRequest) -> Result<String, String> {
     }
 }
 
-pub fn handle_reauth_password(password: String) -> Result<String, String> {
-    let password = Zeroizing::new(password);
+pub fn handle_reauth_password(password: Zeroizing<String>) -> Result<String, String> {
     kenv_core::reauth_password(&password)
         .map_err(|e| e.to_string())
         .map(|_| "ok".to_string())
@@ -96,9 +95,8 @@ pub fn handle_lock() -> Result<String, String> {
         .map(|_| "ok".to_string())
 }
 
-pub fn handle_create(password: String) -> Result<String, String> {
-    let password_zeroizing = zeroize::Zeroizing::new(password);
-    kenv_core::create_vault(&password_zeroizing)
+pub fn handle_create(password: Zeroizing<String>) -> Result<String, String> {
+    kenv_core::create_vault(&password)
         .map_err(|e| e.to_string())
         .map(|_| "vault_status=locked".to_string())
 }
