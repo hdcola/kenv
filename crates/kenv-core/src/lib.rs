@@ -109,6 +109,18 @@ static VAULT_STATE: RwLock<VaultState> = RwLock::new(VaultState {
 /// produce interleaved rename ordering. Never acquired while holding any `VAULT_STATE` lock.
 static PERSIST_MUTEX: Mutex<()> = Mutex::new(());
 
+/// Serialises the full modify→persist→rollback transaction for slot mutations.
+/// Held for the entire lifetime of `add_slot`, `remove_slot`, and `rename_slot`.
+/// This ensures that if a persist fails and rolls back in-memory state, no concurrent
+/// mutation has modified `VAULT_STATE` between Phase 1 (write lock) and the rollback
+/// write lock — which would otherwise cause the rollback to silently destroy the
+/// concurrent change.
+///
+/// Lock order: MUTATION_LOCK (outermost) → VAULT_STATE.write/read → PERSIST_MUTEX
+/// (innermost, inside persist_vault_state). Never acquire MUTATION_LOCK while
+/// holding any VAULT_STATE guard.
+static MUTATION_LOCK: Mutex<()> = Mutex::new(());
+
 #[derive(Debug, Error)]
 pub enum KenvError {
     #[error("vault does not exist")]
@@ -525,6 +537,7 @@ pub struct SlotInfo {
 /// Requires vault to be unlocked. Low-risk operation (no password reauthentication).
 /// Returns error if vault is locked or slot_id already exists.
 pub fn add_slot(slot: slots::UnlockSlot) -> Result<(), KenvError> {
+    let _mutation_guard = MUTATION_LOCK.lock();
     let new_slot_id = slot.slot_id;
     {
         let mut state = VAULT_STATE.write();
@@ -590,6 +603,7 @@ fn reauth_window_valid(reauth_time: Option<SystemTime>) -> bool {
 /// If high-risk operation is detected, returns KenvError::UnlockFailed with indicator.
 /// Caller should invoke reauth_password() separately, then retry remove_slot().
 pub fn remove_slot(slot_id: u8) -> Result<(), KenvError> {
+    let _mutation_guard = MUTATION_LOCK.lock();
     // Save removed slot for rollback if persist fails.
     let mut removed: Option<(usize, slots::UnlockSlot)> = None;
     {
@@ -694,6 +708,7 @@ pub fn list_slots() -> Result<Vec<SlotInfo>, KenvError> {
 ///
 /// Requires vault to be unlocked. Low-risk operation (no password reauthentication).
 pub fn rename_slot(slot_id: u8, new_label: String) -> Result<(), KenvError> {
+    let _mutation_guard = MUTATION_LOCK.lock();
     let old_label: Option<String>;
     {
         let mut state = VAULT_STATE.write();
