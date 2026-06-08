@@ -1,5 +1,4 @@
 /// Touch ID unlock slot implementation using Keychain + Secure Enclave
-
 use super::TouchIdSlotData;
 use crate::crypto;
 use crate::KenvError;
@@ -9,10 +8,7 @@ use rand::RngCore;
 use crate::platform::macos;
 
 /// Wrap DEK using Touch ID + Keychain + Secure Enclave
-pub fn wrap_dek(
-    dek: &[u8; 32],
-    label: &str,
-) -> Result<TouchIdSlotData, KenvError> {
+pub fn wrap_dek(dek: &[u8; 32], label: &str) -> Result<TouchIdSlotData, KenvError> {
     let mut nonce = [0u8; 12];
     rand::thread_rng().fill_bytes(&mut nonce);
 
@@ -27,8 +23,8 @@ pub fn wrap_dek(
     let mock_wrapping_key = [1u8; 32]; // Temporary: replace with SE-derived key
 
     // Encrypt DEK with the wrapping key
-    let ciphertext = crypto::encrypt(&mock_wrapping_key, &nonce, dek)
-        .map_err(|_| KenvError::EncryptionError)?;
+    let ciphertext =
+        crypto::encrypt(&mock_wrapping_key, &nonce, dek).map_err(|_| KenvError::EncryptionError)?;
 
     // Extract GCM tag
     if ciphertext.len() < 16 {

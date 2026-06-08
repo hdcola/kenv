@@ -28,7 +28,9 @@ fn response_failed_empty_response_is_not_socket_unavailable() {
 fn response_failed_malformed_json_is_not_socket_unavailable() {
     // Desktop sent data but it's corrupt (network corruption, partial send, etc.)
     // This MUST NOT be retried locally, vault may have been created
-    let err = IpcError::ResponseFailed("failed to parse response: expected value at line 1 column 0".into());
+    let err = IpcError::ResponseFailed(
+        "failed to parse response: expected value at line 1 column 0".into(),
+    );
 
     assert!(!err.is_socket_unavailable());
     assert!(!matches!(err, IpcError::SocketUnavailable(_)));
@@ -193,30 +195,33 @@ fn vault_creation_scenario_success_response_fails() {
     // 6. CLI MUST NOT retry locally (vault already exists)
     // 7. User MUST NOT see "creation failed" (vault was created)
 
-    let response_transmission_failed = IpcError::ResponseFailed(
-        "failed to read response: Connection reset by peer".into()
-    );
+    let response_transmission_failed =
+        IpcError::ResponseFailed("failed to read response: Connection reset by peer".into());
 
     // Fallback check: should NOT fall back
-    assert!(!response_transmission_failed.is_socket_unavailable(),
-        "ResponseFailed must NOT trigger local fallback - vault likely exists on desktop");
+    assert!(
+        !response_transmission_failed.is_socket_unavailable(),
+        "ResponseFailed must NOT trigger local fallback - vault likely exists on desktop"
+    );
 
     // Error visibility: error message should be preserved
     let error_msg = response_transmission_failed.to_string();
-    assert!(error_msg.contains("read response") || error_msg.contains("Connection"),
-        "Error message must indicate transmission failure, not creation failure");
+    assert!(
+        error_msg.contains("read response") || error_msg.contains("Connection"),
+        "Error message must indicate transmission failure, not creation failure"
+    );
 }
 
 #[test]
 fn vault_creation_scenario_empty_response() {
     // Similar scenario: desktop processed request but sent nothing
-    let empty_response = IpcError::ResponseFailed(
-        "no response from socket server".into()
-    );
+    let empty_response = IpcError::ResponseFailed("no response from socket server".into());
 
     // Fallback check: should NOT fall back
-    assert!(!empty_response.is_socket_unavailable(),
-        "Empty response MUST NOT trigger local fallback - vault likely exists");
+    assert!(
+        !empty_response.is_socket_unavailable(),
+        "Empty response MUST NOT trigger local fallback - vault likely exists"
+    );
 }
 
 // ============================================================================

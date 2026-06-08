@@ -59,9 +59,7 @@ fn print_status() -> Result<(), Box<dyn std::error::Error>> {
     let output = match ipc::IpcClient::status() {
         Ok(status_str) => format!("vault_status={}", status_str),
         Err(ipc::IpcError::SocketUnavailable(_)) => render_status(get_vault_status)?,
-        Err(e) => {
-            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)))
-        }
+        Err(e) => return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, e))),
     };
     println!("{output}");
     Ok(())
@@ -104,10 +102,7 @@ fn create_new_vault() -> Result<(), Box<dyn std::error::Error>> {
             println!("vault_status=locked");
             Ok(())
         }
-        Err(e) => Err(Box::new(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            e,
-        ))),
+        Err(e) => Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, e))),
     }
 }
 
@@ -184,10 +179,7 @@ fn print_slots() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 eprintln!("Error: {}", e);
             }
-            Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                e,
-            )))
+            Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)))
         }
     }
 }
@@ -201,8 +193,7 @@ fn remove_unlock_slot(slot_id: u8) -> Result<(), Box<dyn std::error::Error>> {
         Err(e) if e.contains("reauthentication_required") => {
             // HIGH-RISK operation detected, request reauthentication
             eprintln!("Removing this slot requires password reauthentication");
-            let password =
-                Zeroizing::new(rpassword::prompt_password("Vault password: ")?);
+            let password = Zeroizing::new(rpassword::prompt_password("Vault password: ")?);
             ipc::IpcClient::reauth_password(&password)?;
             ipc::IpcClient::remove_slot(slot_id)?;
             println!("slot_removed=true");
@@ -215,10 +206,7 @@ fn remove_unlock_slot(slot_id: u8) -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 eprintln!("Error: {}", e);
             }
-            Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                e,
-            )))
+            Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)))
         }
     }
 }
@@ -239,10 +227,7 @@ fn print_ssh_keys() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 eprintln!("Error: {}", e);
             }
-            Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                e,
-            )))
+            Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)))
         }
     }
 }

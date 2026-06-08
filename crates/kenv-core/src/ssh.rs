@@ -1,5 +1,4 @@
 /// SSH key management and signing operations
-
 use crate::KenvError;
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
@@ -8,11 +7,11 @@ use zeroize::Zeroizing;
 /// SSH private key stored in vault
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SshKey {
-    pub key_id: String,          // ed25519, rsa, ecdsa, etc.
-    pub name: String,            // human-readable label
-    pub public_key: Vec<u8>,     // OpenSSH format public key
-    pub private_key: Vec<u8>,    // encrypted private key material
-    pub key_type: SshKeyType,    // algorithm
+    pub key_id: String,       // ed25519, rsa, ecdsa, etc.
+    pub name: String,         // human-readable label
+    pub public_key: Vec<u8>,  // OpenSSH format public key
+    pub private_key: Vec<u8>, // encrypted private key material
+    pub key_type: SshKeyType, // algorithm
     pub created_at: SystemTime,
     pub last_used: Option<SystemTime>,
     pub disabled: bool,
@@ -58,10 +57,7 @@ pub struct SshSignature {
 ///    - ECDSA P-256: ecdsa crate
 /// 3. Private key decryption after vault unlock (use stored DEK)
 /// 4. Signature generation matching OpenSSH format
-pub fn sign_ssh_key(
-    _key_id: &str,
-    _data_to_sign: &[u8],
-) -> Result<SshSignature, KenvError> {
+pub fn sign_ssh_key(_key_id: &str, _data_to_sign: &[u8]) -> Result<SshSignature, KenvError> {
     Err(KenvError::SshSigningNotImplemented)
 }
 

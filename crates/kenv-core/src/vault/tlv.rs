@@ -1,7 +1,6 @@
 /// TLV (Tag-Length-Value) encoding with varint length support
 ///
 /// Allows forward-compatible format where unknown tags can be safely skipped.
-
 use crate::KenvError;
 
 /// Varint length encoding (1-4 bytes)
@@ -53,9 +52,7 @@ fn decode_varint(buf: &[u8]) -> Result<(u32, usize), KenvError> {
         if buf.len() < 3 {
             return Err(KenvError::InvalidVaultFormat);
         }
-        let val = (((first & 0x1F) as u32) << 16)
-            | ((buf[1] as u32) << 8)
-            | (buf[2] as u32);
+        let val = (((first & 0x1F) as u32) << 16) | ((buf[1] as u32) << 8) | (buf[2] as u32);
         Ok((val, 3))
     } else if first & 0xE0 == 0xE0 {
         // 4 bytes
@@ -73,11 +70,7 @@ fn decode_varint(buf: &[u8]) -> Result<(u32, usize), KenvError> {
 }
 
 /// Write a TLV field
-pub fn write_field(
-    writer: &mut Vec<u8>,
-    tag: u8,
-    value: &[u8],
-) -> Result<(), KenvError> {
+pub fn write_field(writer: &mut Vec<u8>, tag: u8, value: &[u8]) -> Result<(), KenvError> {
     // Write tag
     writer.push(tag);
 
@@ -93,10 +86,7 @@ pub fn write_field(
 }
 
 /// Read a TLV field, skipping unknown tags
-pub fn read_field(
-    data: &[u8],
-    offset: &mut usize,
-) -> Result<Option<(u8, Vec<u8>)>, KenvError> {
+pub fn read_field(data: &[u8], offset: &mut usize) -> Result<Option<(u8, Vec<u8>)>, KenvError> {
     if *offset >= data.len() {
         return Ok(None);
     }

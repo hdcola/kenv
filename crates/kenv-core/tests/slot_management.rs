@@ -1,6 +1,6 @@
 use kenv_core::{
     add_password_slot, add_slot, list_slots, remove_slot, rename_slot,
-    slots::{UnlockSlot, SlotType},
+    slots::{SlotType, UnlockSlot},
 };
 use serial_test::serial;
 use std::time::SystemTime;
@@ -54,8 +54,8 @@ fn reauth_password_requires_unlocked_vault() {
 #[test]
 #[serial]
 fn newly_created_vault_has_password_slot() {
+    use kenv_core::{reauth_password, unlock, vault};
     use tempfile::TempDir;
-    use kenv_core::{unlock, reauth_password, vault};
 
     let temp_dir = TempDir::new().unwrap();
     let vault_path = temp_dir.path().join("vault.kenv");
@@ -63,8 +63,7 @@ fn newly_created_vault_has_password_slot() {
     let params = kenv_core::crypto::KdfParams::for_tests();
 
     // Create vault at temp path
-    kenv_core::create_vault_at(&vault_path, password, &params)
-        .expect("failed to create vault");
+    kenv_core::create_vault_at(&vault_path, password, &params).expect("failed to create vault");
 
     // Set test vault path so vault_path() uses temp location
     vault::set_test_vault_path(vault_path.clone());
@@ -83,17 +82,16 @@ fn newly_created_vault_has_password_slot() {
 #[test]
 #[serial]
 fn newly_created_vault_reauth_succeeds() {
-    use tempfile::TempDir;
-    use kenv_core::{create_vault, unlock, lock, reauth_password, vault};
+    use kenv_core::{create_vault, lock, reauth_password, unlock, vault};
     use std::fs;
+    use tempfile::TempDir;
 
     // Ensure clean state: clear test vault path and lock first
     vault::clear_test_vault_path();
     lock().ok();
 
     // Cleanup any leftover real vault
-    let real_vault = dirs::home_dir()
-        .map(|h| h.join(".kenv").join("vault.kenv"));
+    let real_vault = dirs::home_dir().map(|h| h.join(".kenv").join("vault.kenv"));
     if let Some(path) = &real_vault {
         let _ = fs::remove_file(path);
     }
@@ -122,17 +120,16 @@ fn newly_created_vault_reauth_succeeds() {
 #[test]
 #[serial]
 fn newly_created_vault_reauth_fails_with_wrong_password() {
-    use tempfile::TempDir;
-    use kenv_core::{create_vault, unlock, lock, reauth_password, vault};
+    use kenv_core::{create_vault, lock, reauth_password, unlock, vault};
     use std::fs;
+    use tempfile::TempDir;
 
     // Ensure clean state: clear test vault path and lock first
     vault::clear_test_vault_path();
     lock().ok();
 
     // Cleanup any leftover real vault
-    let real_vault = dirs::home_dir()
-        .map(|h| h.join(".kenv").join("vault.kenv"));
+    let real_vault = dirs::home_dir().map(|h| h.join(".kenv").join("vault.kenv"));
     if let Some(path) = &real_vault {
         let _ = fs::remove_file(path);
     }
@@ -177,7 +174,6 @@ fn ctap2_slot(slot_id: u8, label: &str) -> UnlockSlot {
     }
 }
 
-
 /// Create a fast vault (cheap test KDF params) at `path` and route `vault_path()` to it on the
 /// current thread. Using `for_tests` params keeps these serial tests off the slow Argon2 path.
 fn create_test_vault(path: &std::path::Path, password: &str) {
@@ -191,8 +187,8 @@ fn create_test_vault(path: &std::path::Path, password: &str) {
 #[test]
 #[serial]
 fn add_slot_persists_across_lock_unlock() {
-    use tempfile::TempDir;
     use kenv_core::{add_slot, lock, unlock, vault};
+    use tempfile::TempDir;
 
     vault::clear_test_vault_path();
     lock().ok();
@@ -211,7 +207,10 @@ fn add_slot_persists_across_lock_unlock() {
     lock().ok();
     unlock(password).expect("failed to re-unlock");
     let slots = list_slots().expect("list_slots after reload");
-    assert!(slots.iter().any(|s| s.slot_id == 2), "added slot must survive reload");
+    assert!(
+        slots.iter().any(|s| s.slot_id == 2),
+        "added slot must survive reload"
+    );
 
     lock().ok();
     vault::clear_test_vault_path();
@@ -220,8 +219,8 @@ fn add_slot_persists_across_lock_unlock() {
 #[test]
 #[serial]
 fn rename_slot_persists_across_lock_unlock() {
-    use tempfile::TempDir;
     use kenv_core::{lock, unlock, vault};
+    use tempfile::TempDir;
 
     vault::clear_test_vault_path();
     lock().ok();
@@ -238,7 +237,10 @@ fn rename_slot_persists_across_lock_unlock() {
     lock().ok();
     unlock(password).expect("failed to re-unlock");
     let slots = list_slots().expect("list_slots after reload");
-    let slot = slots.iter().find(|s| s.slot_id == 1).expect("slot 1 present");
+    let slot = slots
+        .iter()
+        .find(|s| s.slot_id == 1)
+        .expect("slot 1 present");
     assert_eq!(slot.label, "renamed", "renamed label must survive reload");
 
     lock().ok();
@@ -248,8 +250,8 @@ fn rename_slot_persists_across_lock_unlock() {
 #[test]
 #[serial]
 fn remove_slot_persists_across_lock_unlock() {
-    use tempfile::TempDir;
     use kenv_core::{add_slot, lock, unlock, vault};
+    use tempfile::TempDir;
 
     vault::clear_test_vault_path();
     lock().ok();
@@ -268,8 +270,14 @@ fn remove_slot_persists_across_lock_unlock() {
     lock().ok();
     unlock(password).expect("failed to re-unlock");
     let slots = list_slots().expect("list_slots after reload");
-    assert!(slots.iter().all(|s| s.slot_id != 2), "removed slot must stay gone after reload");
-    assert!(slots.iter().any(|s| s.slot_id == 1), "password slot must remain");
+    assert!(
+        slots.iter().all(|s| s.slot_id != 2),
+        "removed slot must stay gone after reload"
+    );
+    assert!(
+        slots.iter().any(|s| s.slot_id == 1),
+        "password slot must remain"
+    );
 
     lock().ok();
     vault::clear_test_vault_path();
@@ -280,8 +288,8 @@ fn remove_slot_persists_across_lock_unlock() {
 #[test]
 #[serial]
 fn cannot_remove_last_password_slot() {
-    use tempfile::TempDir;
     use kenv_core::{lock, unlock, vault};
+    use tempfile::TempDir;
 
     vault::clear_test_vault_path();
     lock().ok();
@@ -299,7 +307,10 @@ fn cannot_remove_last_password_slot() {
 
     // Slot must still be there.
     let slots = list_slots().expect("list_slots");
-    assert!(slots.iter().any(|s| s.slot_id == 1), "last password slot must survive");
+    assert!(
+        slots.iter().any(|s| s.slot_id == 1),
+        "last password slot must survive"
+    );
 
     lock().ok();
     vault::clear_test_vault_path();
@@ -308,8 +319,8 @@ fn cannot_remove_last_password_slot() {
 #[test]
 #[serial]
 fn can_remove_password_slot_when_another_remains() {
+    use kenv_core::{crypto::KdfParams, lock, reauth_password, unlock, vault};
     use tempfile::TempDir;
-    use kenv_core::{lock, reauth_password, unlock, vault, crypto::KdfParams};
 
     vault::clear_test_vault_path();
     lock().ok();
@@ -331,7 +342,10 @@ fn can_remove_password_slot_when_another_remains() {
     lock().ok();
     unlock(password).expect("re-unlock via backup slot must succeed");
     let slots = list_slots().expect("list_slots after reload");
-    assert!(slots.iter().all(|s| s.slot_id != 1), "removed slot stays gone");
+    assert!(
+        slots.iter().all(|s| s.slot_id != 1),
+        "removed slot stays gone"
+    );
     assert!(slots.iter().any(|s| s.slot_id == 2), "backup slot persists");
 
     lock().ok();
@@ -343,8 +357,8 @@ fn can_remove_password_slot_when_another_remains() {
 #[test]
 #[serial]
 fn reauth_succeeds_on_different_thread_than_unlock() {
-    use tempfile::TempDir;
     use kenv_core::{lock, reauth_password, unlock, vault};
+    use tempfile::TempDir;
 
     vault::clear_test_vault_path();
     lock().ok();
@@ -388,8 +402,8 @@ fn reauth_succeeds_on_different_thread_than_unlock() {
 #[test]
 #[serial]
 fn reauth_uses_unlock_slot_not_first_slot() {
+    use kenv_core::{crypto::KdfParams, lock, reauth_password, unlock, vault};
     use tempfile::TempDir;
-    use kenv_core::{lock, reauth_password, unlock, vault, crypto::KdfParams};
 
     vault::clear_test_vault_path();
     lock().ok();
@@ -404,8 +418,7 @@ fn reauth_uses_unlock_slot_not_first_slot() {
     unlock(password1).expect("unlock with password1");
 
     // Add slot 2 with a *different* password.
-    add_password_slot(password2, &KdfParams::for_tests())
-        .expect("add second password slot");
+    add_password_slot(password2, &KdfParams::for_tests()).expect("add second password slot");
 
     lock().ok();
 
@@ -413,8 +426,7 @@ fn reauth_uses_unlock_slot_not_first_slot() {
     unlock(password2).expect("unlock with password2");
 
     // reauth with password2 must succeed (it targets slot 2).
-    reauth_password(password2)
-        .expect("reauth with password2 must succeed after unlocking with it");
+    reauth_password(password2).expect("reauth with password2 must succeed after unlocking with it");
 
     // reauth with password1 must fail — slot 2 requires password2.
     let err = reauth_password(password1).unwrap_err();

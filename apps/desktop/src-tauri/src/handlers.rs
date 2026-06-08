@@ -105,4 +105,3 @@ pub fn handle_status() -> Result<String, String> {
         .map(|s| s.as_script_value().to_string())
         .map_err(|e| e.to_string())
 }
-

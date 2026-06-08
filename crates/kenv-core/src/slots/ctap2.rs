@@ -1,5 +1,4 @@
 /// CTAP2/YubiKey unlock slot implementation with hmac-secret extension
-
 use super::Ctap2SlotData;
 use crate::crypto;
 use crate::platform::ctap2;
@@ -29,8 +28,8 @@ pub fn register_and_wrap_dek(
     let wrapping_key = derive_wrapping_key(&mock_hmac_secret, &challenge)?;
 
     // Encrypt DEK with wrapping key
-    let ciphertext = crypto::encrypt(&wrapping_key, &nonce, dek)
-        .map_err(|_| KenvError::EncryptionError)?;
+    let ciphertext =
+        crypto::encrypt(&wrapping_key, &nonce, dek).map_err(|_| KenvError::EncryptionError)?;
 
     // Extract GCM tag
     if ciphertext.len() < 16 {
@@ -63,7 +62,11 @@ pub fn assert_and_unwrap_dek(
     slot: &Ctap2SlotData,
 ) -> Result<[u8; 32], KenvError> {
     // Perform GetAssertion with hmac-secret
-    let challenge_array: [u8; 32] = slot.challenge.iter().copied().collect::<Vec<_>>()
+    let challenge_array: [u8; 32] = slot
+        .challenge
+        .iter()
+        .copied()
+        .collect::<Vec<_>>()
         .try_into()
         .map_err(|_| KenvError::EncryptionError)?;
     let assertion = ctap2::get_assertion_with_hmac_secret(
@@ -102,17 +105,14 @@ pub fn assert_and_unwrap_dek(
 ///
 /// Uses HMAC-SHA256(hmac_secret, challenge || additional_data)
 /// to derive the wrapping key deterministically.
-fn derive_wrapping_key(
-    hmac_secret: &[u8; 32],
-    challenge: &[u8],
-) -> Result<[u8; 32], KenvError> {
+fn derive_wrapping_key(hmac_secret: &[u8; 32], challenge: &[u8]) -> Result<[u8; 32], KenvError> {
     use hmac::{Hmac, Mac};
     use sha2::Sha256;
 
     type HmacSha256 = Hmac<Sha256>;
 
-    let mut mac = HmacSha256::new_from_slice(hmac_secret)
-        .map_err(|_| KenvError::EncryptionError)?;
+    let mut mac =
+        HmacSha256::new_from_slice(hmac_secret).map_err(|_| KenvError::EncryptionError)?;
 
     mac.update(challenge);
     mac.update(b"vault_wrapping_key");

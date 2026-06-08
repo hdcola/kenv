@@ -1,12 +1,12 @@
 use crate::handlers;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tauri::Emitter;
 use std::fs;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
 use std::thread;
+use tauri::Emitter;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Request {
@@ -93,7 +93,10 @@ fn handle_client(
     Ok(())
 }
 
-fn read_exact(socket: &mut std::os::unix::net::UnixStream, buf: &mut [u8]) -> Result<(), Box<dyn std::error::Error>> {
+fn read_exact(
+    socket: &mut std::os::unix::net::UnixStream,
+    buf: &mut [u8],
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut offset = 0;
     while offset < buf.len() {
         match socket.read(&mut buf[offset..])? {
@@ -104,7 +107,9 @@ fn read_exact(socket: &mut std::os::unix::net::UnixStream, buf: &mut [u8]) -> Re
     Ok(())
 }
 
-fn read_message(socket: &mut std::os::unix::net::UnixStream) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+fn read_message(
+    socket: &mut std::os::unix::net::UnixStream,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     // Read exactly 4 bytes for length header
     let mut len_bytes = [0u8; 4];
     read_exact(socket, &mut len_bytes)?;
@@ -123,7 +128,10 @@ fn read_message(socket: &mut std::os::unix::net::UnixStream) -> Result<Vec<u8>, 
     Ok(payload)
 }
 
-fn send_message(socket: &mut std::os::unix::net::UnixStream, payload: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+fn send_message(
+    socket: &mut std::os::unix::net::UnixStream,
+    payload: &[u8],
+) -> Result<(), Box<dyn std::error::Error>> {
     let len = payload.len() as u32;
     socket.write_all(&len.to_be_bytes())?;
     socket.write_all(payload)?;
@@ -136,30 +144,28 @@ fn emit_state_changed(app_handle: &tauri::AppHandle) {
 
 fn handle_request(req: &Request, app_handle: &tauri::AppHandle) -> Response {
     match req.method.as_str() {
-        "unlock" => {
-            match serde_json::from_value::<handlers::UnlockRequest>(req.params.clone()) {
-                Ok(unlock_req) => match handlers::handle_unlock(unlock_req) {
-                    Ok(result) => {
-                        emit_state_changed(app_handle);
-                        Response {
-                            success: true,
-                            result: Some(Value::String(result)),
-                            error: None,
-                        }
+        "unlock" => match serde_json::from_value::<handlers::UnlockRequest>(req.params.clone()) {
+            Ok(unlock_req) => match handlers::handle_unlock(unlock_req) {
+                Ok(result) => {
+                    emit_state_changed(app_handle);
+                    Response {
+                        success: true,
+                        result: Some(Value::String(result)),
+                        error: None,
                     }
-                    Err(e) => Response {
-                        success: false,
-                        result: None,
-                        error: Some(e),
-                    },
-                },
+                }
                 Err(e) => Response {
                     success: false,
                     result: None,
-                    error: Some(format!("invalid params: {}", e)),
+                    error: Some(e),
                 },
-            }
-        }
+            },
+            Err(e) => Response {
+                success: false,
+                result: None,
+                error: Some(format!("invalid params: {}", e)),
+            },
+        },
         "list_slots" => match handlers::handle_list_slots() {
             Ok(result) => Response {
                 success: true,
@@ -208,27 +214,25 @@ fn handle_request(req: &Request, app_handle: &tauri::AppHandle) -> Response {
                 },
             }
         }
-        "reauth_password" => {
-            match req.params.get("password").and_then(|v| v.as_str()) {
-                Some(password) => match handlers::handle_reauth_password(password.to_string()) {
-                    Ok(result) => Response {
-                        success: true,
-                        result: Some(Value::String(result)),
-                        error: None,
-                    },
-                    Err(e) => Response {
-                        success: false,
-                        result: None,
-                        error: Some(e),
-                    },
+        "reauth_password" => match req.params.get("password").and_then(|v| v.as_str()) {
+            Some(password) => match handlers::handle_reauth_password(password.to_string()) {
+                Ok(result) => Response {
+                    success: true,
+                    result: Some(Value::String(result)),
+                    error: None,
                 },
-                None => Response {
+                Err(e) => Response {
                     success: false,
                     result: None,
-                    error: Some("missing password parameter".to_string()),
+                    error: Some(e),
                 },
-            }
-        }
+            },
+            None => Response {
+                success: false,
+                result: None,
+                error: Some("missing password parameter".to_string()),
+            },
+        },
         "status" => match handlers::handle_status() {
             Ok(result) => Response {
                 success: true,
@@ -256,30 +260,28 @@ fn handle_request(req: &Request, app_handle: &tauri::AppHandle) -> Response {
                 error: Some(e),
             },
         },
-        "create" => {
-            match req.params.get("password").and_then(|v| v.as_str()) {
-                Some(password) => match handlers::handle_create(password.to_string()) {
-                    Ok(result) => {
-                        emit_state_changed(app_handle);
-                        Response {
-                            success: true,
-                            result: Some(Value::String(result)),
-                            error: None,
-                        }
+        "create" => match req.params.get("password").and_then(|v| v.as_str()) {
+            Some(password) => match handlers::handle_create(password.to_string()) {
+                Ok(result) => {
+                    emit_state_changed(app_handle);
+                    Response {
+                        success: true,
+                        result: Some(Value::String(result)),
+                        error: None,
                     }
-                    Err(e) => Response {
-                        success: false,
-                        result: None,
-                        error: Some(e),
-                    },
-                },
-                None => Response {
+                }
+                Err(e) => Response {
                     success: false,
                     result: None,
-                    error: Some("missing password parameter".to_string()),
+                    error: Some(e),
                 },
-            }
-        }
+            },
+            None => Response {
+                success: false,
+                result: None,
+                error: Some("missing password parameter".to_string()),
+            },
+        },
         _ => Response {
             success: false,
             result: None,

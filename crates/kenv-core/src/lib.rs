@@ -183,7 +183,8 @@ pub fn create_vault_at(path: &Path, password: &str, params: &KdfParams) -> Resul
     dek_array.copy_from_slice(&*dek);
 
     // Wrap the DEK in an initial password slot.
-    let password_slot = create_password_slot(password, &dek_array, 1, "password".to_string(), params)?;
+    let password_slot =
+        create_password_slot(password, &dek_array, 1, "password".to_string(), params)?;
 
     let mut payload = vault::VaultPayload::new();
     payload.slots.push(password_slot);
@@ -199,7 +200,11 @@ pub fn create_vault_at(path: &Path, password: &str, params: &KdfParams) -> Resul
         .map_err(|_| KenvError::EncryptionError)?;
 
     // KDF params in V2 header are unused (zeros); params live per-slot in slot_records.
-    let zero_params = KdfParams { m_cost: 0, t_cost: 0, p_cost: 0 };
+    let zero_params = KdfParams {
+        m_cost: 0,
+        t_cost: 0,
+        p_cost: 0,
+    };
     vault::write_vault_file(
         path,
         &file_salt,
@@ -223,10 +228,9 @@ pub fn unlock(password: &str) -> Result<VaultStatus, KenvError> {
     let salt_array: [u8; 32] = data[vault::SALT_OFFSET..vault::SALT_OFFSET + vault::SALT_SIZE]
         .try_into()
         .map_err(|_| KenvError::InvalidVaultFormat)?;
-    let nonce_array: [u8; 12] =
-        data[vault::NONCE_OFFSET..vault::NONCE_OFFSET + vault::NONCE_SIZE]
-            .try_into()
-            .map_err(|_| KenvError::InvalidVaultFormat)?;
+    let nonce_array: [u8; 12] = data[vault::NONCE_OFFSET..vault::NONCE_OFFSET + vault::NONCE_SIZE]
+        .try_into()
+        .map_err(|_| KenvError::InvalidVaultFormat)?;
 
     let (dek, unlock_slot_id, ciphertext, kdf_params_opt) = if version == vault::FILE_VERSION_V2 {
         // V2: iterate cleartext slot records to unwrap the DEK.
@@ -246,15 +250,25 @@ pub fn unlock(password: &str) -> Result<VaultStatus, KenvError> {
     } else {
         // V1: re-derive the DEK from the header salt (single-password format).
         let m_cost = u32::from_be_bytes(
-            data[6..10].try_into().map_err(|_| KenvError::InvalidVaultFormat)?,
+            data[6..10]
+                .try_into()
+                .map_err(|_| KenvError::InvalidVaultFormat)?,
         );
         let t_cost = u32::from_be_bytes(
-            data[10..14].try_into().map_err(|_| KenvError::InvalidVaultFormat)?,
+            data[10..14]
+                .try_into()
+                .map_err(|_| KenvError::InvalidVaultFormat)?,
         );
         let p_cost = u32::from_be_bytes(
-            data[14..18].try_into().map_err(|_| KenvError::InvalidVaultFormat)?,
+            data[14..18]
+                .try_into()
+                .map_err(|_| KenvError::InvalidVaultFormat)?,
         );
-        let params = KdfParams { m_cost, t_cost, p_cost };
+        let params = KdfParams {
+            m_cost,
+            t_cost,
+            p_cost,
+        };
         let key_bytes = crypto::derive_key(password, &salt_array, &params)
             .map_err(|_| KenvError::EncryptionError)?;
         let mut dek = [0u8; 32];
@@ -320,10 +334,9 @@ pub fn unlock_with_touchid() -> Result<VaultStatus, KenvError> {
     let salt_array: [u8; 32] = data[vault::SALT_OFFSET..vault::SALT_OFFSET + vault::SALT_SIZE]
         .try_into()
         .map_err(|_| KenvError::InvalidVaultFormat)?;
-    let nonce_array: [u8; 12] =
-        data[vault::NONCE_OFFSET..vault::NONCE_OFFSET + vault::NONCE_SIZE]
-            .try_into()
-            .map_err(|_| KenvError::InvalidVaultFormat)?;
+    let nonce_array: [u8; 12] = data[vault::NONCE_OFFSET..vault::NONCE_OFFSET + vault::NONCE_SIZE]
+        .try_into()
+        .map_err(|_| KenvError::InvalidVaultFormat)?;
 
     let (records, ciphertext_start) = vault::parse_cleartext_slot_records(&data)?;
     let ciphertext = &data[ciphertext_start..];
@@ -412,15 +425,29 @@ fn persist_vault_state() -> Result<(), KenvError> {
     if file_version == vault::FILE_VERSION_V2 {
         // Rebuild cleartext slot records from current in-memory slot list.
         let slot_records = vault::build_cleartext_slot_records(&payload.slots);
-        let zero_params = KdfParams { m_cost: 0, t_cost: 0, p_cost: 0 };
+        let zero_params = KdfParams {
+            m_cost: 0,
+            t_cost: 0,
+            p_cost: 0,
+        };
         vault::overwrite_vault_file(
-            &vault_path, &salt, &nonce, &ciphertext, &zero_params, &slot_records,
+            &vault_path,
+            &salt,
+            &nonce,
+            &ciphertext,
+            &zero_params,
+            &slot_records,
             vault::FILE_VERSION_V2,
         )
     } else {
         let kdf_params = state.kdf_params.clone().ok_or(KenvError::VaultLocked)?;
         vault::overwrite_vault_file(
-            &vault_path, &salt, &nonce, &ciphertext, &kdf_params, &[],
+            &vault_path,
+            &salt,
+            &nonce,
+            &ciphertext,
+            &kdf_params,
+            &[],
             vault::FILE_VERSION_V1,
         )
     }
@@ -661,9 +688,7 @@ pub fn reauth_password(password: &str) -> Result<(), KenvError> {
             let password_slot = target_id
                 .and_then(|id| {
                     payload.slots.iter().find(|s| {
-                        s.slot_id == id
-                            && s.slot_type == slots::SlotType::Password
-                            && !s.disabled
+                        s.slot_id == id && s.slot_type == slots::SlotType::Password && !s.disabled
                     })
                 })
                 .or_else(|| {
@@ -677,11 +702,15 @@ pub fn reauth_password(password: &str) -> Result<(), KenvError> {
                 // Verify password against password slot
                 if let Some(ref pwd_data) = slot.password {
                     let key = Zeroizing::new(
-                        crypto::derive_key(password, &pwd_data.salt, &KdfParams {
-                            m_cost: pwd_data.kdf_m_cost,
-                            t_cost: pwd_data.kdf_t_cost,
-                            p_cost: pwd_data.kdf_p_cost,
-                        })
+                        crypto::derive_key(
+                            password,
+                            &pwd_data.salt,
+                            &KdfParams {
+                                m_cost: pwd_data.kdf_m_cost,
+                                t_cost: pwd_data.kdf_t_cost,
+                                p_cost: pwd_data.kdf_p_cost,
+                            },
+                        )
                         .map_err(|_| KenvError::EncryptionError)?,
                     );
 
@@ -838,5 +867,9 @@ pub fn sign_ssh_key(key_id: &str, data_to_sign: &[u8]) -> Result<ssh::SshSignatu
 /// compiled into the integration test binary).
 #[doc(hidden)]
 pub fn test_insert_ssh_key(key: ssh::SshKey) {
-    VAULT_STATE.write().payload.as_mut().map(|p| p.ssh_keys.push(key));
+    VAULT_STATE
+        .write()
+        .payload
+        .as_mut()
+        .map(|p| p.ssh_keys.push(key));
 }

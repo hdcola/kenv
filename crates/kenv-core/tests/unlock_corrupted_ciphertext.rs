@@ -15,4 +15,3 @@ fn unlock_error_paths_are_tested_elsewhere() {
     // returns UnlockFailed when decryption fails, which covers the case
     // where ciphertext is corrupted (same AEAD tag failure).
 }
-

@@ -70,9 +70,7 @@ fn ipc_error_clone_works() {
 
 #[test]
 fn ipc_error_is_error_trait_implemented() {
-    let err: Box<dyn std::error::Error> = Box::new(
-        IpcError::RemoteError("test error".into())
-    );
+    let err: Box<dyn std::error::Error> = Box::new(IpcError::RemoteError("test error".into()));
     assert_eq!(err.to_string(), "test error");
 }
 

@@ -1,6 +1,6 @@
 pub mod tlv;
 
-use crate::{crypto::KdfParams, KenvError, slots, ssh};
+use crate::{crypto::KdfParams, slots, ssh, KenvError};
 use serde::{Deserialize, Serialize};
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -96,15 +96,21 @@ fn slot_has_key_material(slot: &slots::UnlockSlot) -> bool {
 
 fn encode_slot_key_payload(slot: &slots::UnlockSlot) -> Vec<u8> {
     match slot.slot_type {
-        slots::SlotType::Password => {
-            slot.password.as_ref().map(encode_password_payload).unwrap_or_default()
-        }
-        slots::SlotType::Ctap2 => {
-            slot.ctap2.as_ref().map(encode_ctap2_payload).unwrap_or_default()
-        }
-        slots::SlotType::TouchId => {
-            slot.touchid.as_ref().map(encode_touchid_payload).unwrap_or_default()
-        }
+        slots::SlotType::Password => slot
+            .password
+            .as_ref()
+            .map(encode_password_payload)
+            .unwrap_or_default(),
+        slots::SlotType::Ctap2 => slot
+            .ctap2
+            .as_ref()
+            .map(encode_ctap2_payload)
+            .unwrap_or_default(),
+        slots::SlotType::TouchId => slot
+            .touchid
+            .as_ref()
+            .map(encode_touchid_payload)
+            .unwrap_or_default(),
     }
 }
 
@@ -194,27 +200,35 @@ pub fn parse_cleartext_slot_records(
                 ParsedSlotKeyData::Password(parse_password_payload(payload)?)
             }
             Some(slots::SlotType::Ctap2) => parse_ctap2_payload(payload)
-                .map(|(cid, ch, counter, nonce, enc_dek, tag)| ParsedSlotKeyData::Ctap2 {
-                    credential_id: cid,
-                    challenge: ch,
-                    counter,
-                    nonce,
-                    encrypted_dek: enc_dek,
-                    tag,
-                })
+                .map(
+                    |(cid, ch, counter, nonce, enc_dek, tag)| ParsedSlotKeyData::Ctap2 {
+                        credential_id: cid,
+                        challenge: ch,
+                        counter,
+                        nonce,
+                        encrypted_dek: enc_dek,
+                        tag,
+                    },
+                )
                 .unwrap_or(ParsedSlotKeyData::Unknown),
             Some(slots::SlotType::TouchId) => parse_touchid_payload(payload)
-                .map(|(keychain_ref, nonce, enc_dek, tag)| ParsedSlotKeyData::TouchId {
-                    keychain_ref,
-                    nonce,
-                    encrypted_dek: enc_dek,
-                    tag,
-                })
+                .map(
+                    |(keychain_ref, nonce, enc_dek, tag)| ParsedSlotKeyData::TouchId {
+                        keychain_ref,
+                        nonce,
+                        encrypted_dek: enc_dek,
+                        tag,
+                    },
+                )
                 .unwrap_or(ParsedSlotKeyData::Unknown),
             None => ParsedSlotKeyData::Unknown,
         };
 
-        records.push(ParsedSlotRecord { slot_id, slot_type: slot_type_byte, key_data });
+        records.push(ParsedSlotRecord {
+            slot_id,
+            slot_type: slot_type_byte,
+            key_data,
+        });
     }
 
     Ok((records, offset))
@@ -225,17 +239,40 @@ fn parse_password_payload(data: &[u8]) -> Result<slots::PasswordSlotData, KenvEr
     if data.len() < 104 {
         return Err(KenvError::InvalidVaultFormat);
     }
-    let salt: [u8; 32] = data[0..32].try_into().map_err(|_| KenvError::InvalidVaultFormat)?;
-    let kdf_m_cost =
-        u32::from_be_bytes(data[32..36].try_into().map_err(|_| KenvError::InvalidVaultFormat)?);
-    let kdf_t_cost =
-        u32::from_be_bytes(data[36..40].try_into().map_err(|_| KenvError::InvalidVaultFormat)?);
-    let kdf_p_cost =
-        u32::from_be_bytes(data[40..44].try_into().map_err(|_| KenvError::InvalidVaultFormat)?);
-    let nonce: [u8; 12] = data[44..56].try_into().map_err(|_| KenvError::InvalidVaultFormat)?;
+    let salt: [u8; 32] = data[0..32]
+        .try_into()
+        .map_err(|_| KenvError::InvalidVaultFormat)?;
+    let kdf_m_cost = u32::from_be_bytes(
+        data[32..36]
+            .try_into()
+            .map_err(|_| KenvError::InvalidVaultFormat)?,
+    );
+    let kdf_t_cost = u32::from_be_bytes(
+        data[36..40]
+            .try_into()
+            .map_err(|_| KenvError::InvalidVaultFormat)?,
+    );
+    let kdf_p_cost = u32::from_be_bytes(
+        data[40..44]
+            .try_into()
+            .map_err(|_| KenvError::InvalidVaultFormat)?,
+    );
+    let nonce: [u8; 12] = data[44..56]
+        .try_into()
+        .map_err(|_| KenvError::InvalidVaultFormat)?;
     let encrypted_dek = data[56..88].to_vec();
-    let tag: [u8; 16] = data[88..104].try_into().map_err(|_| KenvError::InvalidVaultFormat)?;
-    Ok(slots::PasswordSlotData { salt, kdf_m_cost, kdf_t_cost, kdf_p_cost, nonce, encrypted_dek, tag })
+    let tag: [u8; 16] = data[88..104]
+        .try_into()
+        .map_err(|_| KenvError::InvalidVaultFormat)?;
+    Ok(slots::PasswordSlotData {
+        salt,
+        kdf_m_cost,
+        kdf_t_cost,
+        kdf_p_cost,
+        nonce,
+        encrypted_dek,
+        tag,
+    })
 }
 
 fn parse_ctap2_payload(
@@ -253,9 +290,7 @@ fn parse_ctap2_payload(
     Ok((cid, ch, counter, nonce, enc_dek, tag))
 }
 
-fn parse_touchid_payload(
-    data: &[u8],
-) -> Result<(Vec<u8>, [u8; 12], Vec<u8>, [u8; 16]), KenvError> {
+fn parse_touchid_payload(data: &[u8]) -> Result<(Vec<u8>, [u8; 12], Vec<u8>, [u8; 16]), KenvError> {
     let mut o = 0;
     let ref_len = read_u16(data, &mut o)? as usize;
     let keychain_ref = read_bytes(data, &mut o, ref_len)?;
@@ -271,7 +306,11 @@ fn read_u16(data: &[u8], o: &mut usize) -> Result<u16, KenvError> {
     if *o + 2 > data.len() {
         return Err(KenvError::InvalidVaultFormat);
     }
-    let v = u16::from_be_bytes(data[*o..*o + 2].try_into().map_err(|_| KenvError::InvalidVaultFormat)?);
+    let v = u16::from_be_bytes(
+        data[*o..*o + 2]
+            .try_into()
+            .map_err(|_| KenvError::InvalidVaultFormat)?,
+    );
     *o += 2;
     Ok(v)
 }
@@ -280,7 +319,11 @@ fn read_u32(data: &[u8], o: &mut usize) -> Result<u32, KenvError> {
     if *o + 4 > data.len() {
         return Err(KenvError::InvalidVaultFormat);
     }
-    let v = u32::from_be_bytes(data[*o..*o + 4].try_into().map_err(|_| KenvError::InvalidVaultFormat)?);
+    let v = u32::from_be_bytes(
+        data[*o..*o + 4]
+            .try_into()
+            .map_err(|_| KenvError::InvalidVaultFormat)?,
+    );
     *o += 4;
     Ok(v)
 }
@@ -298,7 +341,9 @@ fn read_fixed<const N: usize>(data: &[u8], o: &mut usize) -> Result<[u8; N], Ken
     if *o + N > data.len() {
         return Err(KenvError::InvalidVaultFormat);
     }
-    let v: [u8; N] = data[*o..*o + N].try_into().map_err(|_| KenvError::InvalidVaultFormat)?;
+    let v: [u8; N] = data[*o..*o + N]
+        .try_into()
+        .map_err(|_| KenvError::InvalidVaultFormat)?;
     *o += N;
     Ok(v)
 }
@@ -401,8 +446,7 @@ fn encode_vault_bytes(
     version: u8,
     slot_records: &[u8],
 ) -> Vec<u8> {
-    let mut buf =
-        Vec::with_capacity(CIPHERTEXT_OFFSET + slot_records.len() + ciphertext.len());
+    let mut buf = Vec::with_capacity(CIPHERTEXT_OFFSET + slot_records.len() + ciphertext.len());
     buf.extend_from_slice(MAGIC);
     buf.push(version);
     buf.push(KDF_ID_ARGON2ID);
@@ -521,8 +565,10 @@ pub fn overwrite_vault_file(
                 .mode(0o600)
                 .open(&tmp_path)
                 .map_err(|_| KenvError::FileOperationFailed)?;
-            file.write_all(&buf).map_err(|_| KenvError::FileOperationFailed)?;
-            file.sync_all().map_err(|_| KenvError::FileOperationFailed)?;
+            file.write_all(&buf)
+                .map_err(|_| KenvError::FileOperationFailed)?;
+            file.sync_all()
+                .map_err(|_| KenvError::FileOperationFailed)?;
             Ok(())
         };
 

@@ -5,8 +5,7 @@ use tempfile::TempDir;
 fn setup(password: &str) -> TempDir {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("vault.kenv");
-    create_vault_at(&path, password, &KdfParams::for_tests())
-        .expect("test vault setup failed");
+    create_vault_at(&path, password, &KdfParams::for_tests()).expect("test vault setup failed");
     vault::set_test_vault_path(path);
     dir
 }

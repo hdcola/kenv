@@ -2,7 +2,6 @@
 ///
 /// Supports YubiKey 5.2+, Google Titan, Feitian, and other CTAP2 devices.
 /// Uses hmac-secret extension for deterministic key derivation.
-
 use crate::KenvError;
 
 /// CTAP2 device information
@@ -16,7 +15,7 @@ pub struct Ctap2Device {
 #[derive(Clone, Debug)]
 pub struct Ctap2Credential {
     pub credential_id: Vec<u8>,
-    pub public_key: Vec<u8>,      // CBOR-encoded COSE public key
+    pub public_key: Vec<u8>, // CBOR-encoded COSE public key
     pub attestation_data: Vec<u8>,
 }
 
@@ -136,9 +135,8 @@ mod tests {
         let credential_id = b"test_cred_id".to_vec();
         let challenge = [2u8; 32];
 
-        let assertion =
-            get_assertion_with_hmac_secret(&device, &credential_id, &challenge, 1)
-                .expect("assertion failed");
+        let assertion = get_assertion_with_hmac_secret(&device, &credential_id, &challenge, 1)
+            .expect("assertion failed");
         assert_eq!(assertion.hmac_secret.len(), 32);
         assert!(assertion.counter > 1); // Counter incremented
     }

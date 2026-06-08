@@ -1,5 +1,4 @@
 /// macOS-specific implementations using Secure Enclave and Keychain
-
 use crate::KenvError;
 
 /// Biometric type for Touch ID
@@ -58,10 +57,7 @@ pub fn evaluate_biometric(
 /// Store a secret in Keychain protected by Secure Enclave + Touch ID
 ///
 /// Returns a reference to the stored item that can be used to retrieve it later.
-pub fn store_touchid_protected_secret(
-    _secret: &[u8],
-    _label: &str,
-) -> Result<Vec<u8>, KenvError> {
+pub fn store_touchid_protected_secret(_secret: &[u8], _label: &str) -> Result<Vec<u8>, KenvError> {
     // TODO: Implement with security_framework
     // For now, this is a stub
 
@@ -80,9 +76,7 @@ pub fn store_touchid_protected_secret(
 /// Retrieve a secret from Keychain protected by Secure Enclave + Touch ID
 ///
 /// This requires Touch ID evaluation to unlock Keychain access.
-pub fn retrieve_touchid_protected_secret(
-    keychain_ref: &[u8],
-) -> Result<Vec<u8>, KenvError> {
+pub fn retrieve_touchid_protected_secret(keychain_ref: &[u8]) -> Result<Vec<u8>, KenvError> {
     // TODO: Implement with security_framework
     // For now, this is a stub
 

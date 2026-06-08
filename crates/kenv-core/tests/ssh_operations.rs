@@ -20,7 +20,12 @@ fn sign_ssh_key_requires_unlocked_vault() {
 #[test]
 #[serial]
 fn sign_ssh_key_not_implemented_when_unlocked() {
-    use kenv_core::{crypto::KdfParams, lock, ssh::{SshKey, SshKeyType}, vault};
+    use kenv_core::{
+        crypto::KdfParams,
+        lock,
+        ssh::{SshKey, SshKeyType},
+        vault,
+    };
     use std::time::SystemTime;
     use tempfile::TempDir;
 

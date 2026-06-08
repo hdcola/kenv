@@ -2,7 +2,6 @@
 ///
 /// The DEK is a random 256-bit key that encrypts the vault payload.
 /// Each unlock slot wraps this DEK using a different method (password, Touch ID, CTAP2, etc.).
-
 use crate::crypto;
 use crate::KenvError;
 use rand::RngCore;
@@ -39,17 +38,13 @@ pub fn encrypt_payload(dek: &[u8; 32], plaintext: &[u8]) -> Result<EncryptedPayl
 }
 
 /// Decrypt payload with DEK
-pub fn decrypt_payload(
-    dek: &[u8; 32],
-    encrypted: &EncryptedPayload,
-) -> Result<Vec<u8>, KenvError> {
+pub fn decrypt_payload(dek: &[u8; 32], encrypted: &EncryptedPayload) -> Result<Vec<u8>, KenvError> {
     // Reconstruct ciphertext (encrypted_payload + tag)
     let mut ciphertext = Vec::with_capacity(encrypted.ciphertext.len() + 16);
     ciphertext.extend_from_slice(&encrypted.ciphertext);
     ciphertext.extend_from_slice(&encrypted.tag);
 
-    crypto::decrypt(dek, &encrypted.nonce, &ciphertext)
-        .map_err(|_| KenvError::EncryptionError)
+    crypto::decrypt(dek, &encrypted.nonce, &ciphertext).map_err(|_| KenvError::EncryptionError)
 }
 
 /// Encrypted vault payload

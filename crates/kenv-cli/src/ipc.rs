@@ -98,8 +98,7 @@ pub struct Response {
 
 impl IpcClient {
     pub fn send_request(method: &str, params: Value) -> Result<Response, IpcError> {
-        let socket_path = socket_path()
-            .map_err(|e| IpcError::SocketUnavailable(e))?;
+        let socket_path = socket_path().map_err(|e| IpcError::SocketUnavailable(e))?;
 
         // Check if socket exists
         if !socket_path.exists() {
@@ -109,12 +108,14 @@ impl IpcClient {
         }
 
         // Connect to socket with timeout
-        let mut stream = UnixStream::connect(&socket_path)
-            .map_err(|_| IpcError::SocketUnavailable(
+        let mut stream = UnixStream::connect(&socket_path).map_err(|_| {
+            IpcError::SocketUnavailable(
                 "desktop app not running or socket inaccessible".to_string(),
-            ))?;
+            )
+        })?;
 
-        stream.set_read_timeout(Some(Duration::from_secs(5)))
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
             .map_err(|e| IpcError::RequestFailed(format!("socket error: {}", e)))?;
 
         // Build and send request with length prefix
@@ -128,8 +129,7 @@ impl IpcClient {
             .map_err(|e| IpcError::RequestFailed(format!("failed to send request: {}", e)))?;
 
         // Read response with length-prefixed framing
-        let response_bytes = read_message(&mut stream)
-            .map_err(|e| IpcError::ResponseFailed(e))?;
+        let response_bytes = read_message(&mut stream).map_err(|e| IpcError::ResponseFailed(e))?;
 
         let response_str = String::from_utf8_lossy(&response_bytes);
         let response: Response = serde_json::from_str(&response_str)
@@ -139,7 +139,9 @@ impl IpcClient {
             Ok(response)
         } else {
             Err(IpcError::RemoteError(
-                response.error.unwrap_or_else(|| "unknown error".to_string()),
+                response
+                    .error
+                    .unwrap_or_else(|| "unknown error".to_string()),
             ))
         }
     }
@@ -161,7 +163,9 @@ impl IpcClient {
                 .map_err(|e| IpcError::ResponseFailed(format!("failed to parse slots: {}", e)))?;
             Ok(slots_response.slots)
         } else {
-            Err(IpcError::ResponseFailed("no result in response".to_string()))
+            Err(IpcError::ResponseFailed(
+                "no result in response".to_string(),
+            ))
         }
     }
 
@@ -173,7 +177,9 @@ impl IpcClient {
                 .map_err(|e| IpcError::ResponseFailed(format!("failed to parse keys: {}", e)))?;
             Ok(keys_response.keys)
         } else {
-            Err(IpcError::ResponseFailed("no result in response".to_string()))
+            Err(IpcError::ResponseFailed(
+                "no result in response".to_string(),
+            ))
         }
     }
 
@@ -264,7 +270,6 @@ fn socket_path() -> Result<PathBuf, String> {
     Ok(home.join(".kenv").join("desktop.sock"))
 }
 
-
 #[derive(serde::Deserialize)]
 pub struct SlotInfo {
     pub slot_id: u8,
@@ -310,7 +315,6 @@ impl<'de> serde::de::Deserialize<'de> for Response {
         })
     }
 }
-
 
 impl serde::ser::Serialize for Response {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>

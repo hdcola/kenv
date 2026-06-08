@@ -21,13 +21,12 @@ pub fn wrap_dek(
 
     // Derive wrapping key from password
     let wrapping_key = Zeroizing::new(
-        crypto::derive_key(password, &salt, params)
-            .map_err(|_| KenvError::EncryptionError)?,
+        crypto::derive_key(password, &salt, params).map_err(|_| KenvError::EncryptionError)?,
     );
 
     // Encrypt DEK with wrapping key
-    let ciphertext = crypto::encrypt(&*wrapping_key, &nonce, dek)
-        .map_err(|_| KenvError::EncryptionError)?;
+    let ciphertext =
+        crypto::encrypt(&*wrapping_key, &nonce, dek).map_err(|_| KenvError::EncryptionError)?;
 
     // Extract GCM tag (last 16 bytes)
     if ciphertext.len() < 16 {
@@ -49,10 +48,7 @@ pub fn wrap_dek(
 }
 
 /// Unwrap DEK using password-derived key
-pub fn unwrap_dek(
-    password: &str,
-    slot: &PasswordSlotData,
-) -> Result<[u8; 32], KenvError> {
+pub fn unwrap_dek(password: &str, slot: &PasswordSlotData) -> Result<[u8; 32], KenvError> {
     if password.trim().is_empty() {
         return Err(KenvError::WeakPassword);
     }
