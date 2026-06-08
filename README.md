@@ -71,7 +71,7 @@ The checklist below tracks implemented repository status today, not just the int
 - [x] `kenv status` prints a script-friendly vault status
 - [x] `kenv create`, `kenv unlock`, and `kenv lock` are implemented
 - [x] `kenv slots`, `kenv keys`, and `kenv remove-slot` are implemented
-- [ ] `kenv sign` is implemented (CLI subcommand exists; core returns `SshSigningNotImplemented`)
+- [ ] `kenv sign` is implemented (CLI subcommand not yet added; core returns `SshSigningNotImplemented`)
 - [ ] Context listing command is implemented
 - [ ] Context activation command is implemented
 - [ ] Shell-consumable env export output is implemented
@@ -88,7 +88,7 @@ The checklist below tracks implemented repository status today, not just the int
 - [x] Tauri desktop shell is running with shared-core status wiring
 - [x] Vault status is shown in the UI
 - [x] Vault creation is implemented in the UI
-- [x] Vault unlock/lock actions are implemented in the UI
+- [ ] Vault unlock/lock actions are implemented in the UI
 - [ ] Context management UI is implemented
 - [ ] Environment variable management UI is implemented
 - [ ] SSH key management UI is implemented
