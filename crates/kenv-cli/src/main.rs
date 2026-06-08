@@ -1,10 +1,7 @@
 mod ipc;
 
 use clap::{Parser, Subcommand};
-use kenv_core::{
-    create_vault, get_vault_status, list_slots, list_ssh_keys, reauth_password,
-    remove_slot, sign_ssh_key, KenvError, VaultStatus,
-};
+use kenv_core::{create_vault, get_vault_status, KenvError, VaultStatus};
 use zeroize::Zeroizing;
 
 #[derive(Debug, Parser)]
@@ -34,11 +31,6 @@ enum Commands {
     },
     /// List all SSH keys stored in vault.
     Keys,
-    /// Sign data with an SSH key (requires reauthentication if key requires it).
-    Sign {
-        /// SSH key ID to use for signing
-        key_id: String,
-    },
 }
 
 fn main() {
@@ -52,7 +44,6 @@ fn main() {
         Commands::Slots => print_slots(),
         Commands::RemoveSlot { slot_id } => remove_unlock_slot(slot_id),
         Commands::Keys => print_ssh_keys(),
-        Commands::Sign { key_id } => sign_with_key(&key_id),
     };
 
     if let Err(error) = result {
@@ -232,18 +223,6 @@ fn remove_unlock_slot(slot_id: u8) -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-/// Translate KenvError to CLI error string, applying context-aware conversions.
-/// UnlockFailed becomes "reauthentication_required" when it comes from operations
-/// that require reauthentication (sign, remove_slot).
-fn error_to_string(error: KenvError, operation: &str) -> String {
-    match error {
-        KenvError::UnlockFailed if operation == "sign" || operation == "remove_slot" => {
-            "reauthentication_required".to_string()
-        }
-        e => e.to_string(),
-    }
-}
-
 fn print_ssh_keys() -> Result<(), Box<dyn std::error::Error>> {
     match ipc::IpcClient::list_keys() {
         Ok(keys) => {
@@ -259,84 +238,6 @@ fn print_ssh_keys() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("Hint: Start the desktop app to use this command");
             } else {
                 eprintln!("Error: {}", e);
-            }
-            Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                e,
-            )))
-        }
-    }
-}
-
-fn sign_with_key(key_id: &str) -> Result<(), Box<dyn std::error::Error>> {
-    // Read data to sign from stdin
-    use std::io::Read;
-    let mut data = Vec::new();
-    std::io::stdin().read_to_end(&mut data)?;
-
-    // Try IPC first; only fallback to local sign if socket is unavailable.
-    // Sign is non-idempotent, so we should NOT retry if communication fails mid-stream.
-    let sign_result = match ipc::IpcClient::sign(key_id, &data) {
-        Ok(sig) => Ok(sig),
-        Err(ipc::IpcError::SocketUnavailable(_)) => {
-            // Desktop app not running, safe to sign locally
-            sign_ssh_key(key_id, &data)
-                .map(|sig| sig.signature)
-                .map_err(|e| error_to_string(e, "sign"))
-        }
-        Err(ipc::IpcError::RemoteError(e)
-            | ipc::IpcError::RequestFailed(e)
-            | ipc::IpcError::ResponseFailed(e)) => {
-            // Do NOT retry: key may have been signed or communication failed mid-stream
-            Err(e)
-        }
-    };
-
-    match sign_result {
-        Ok(signature) => {
-            println!("key_id={}", key_id);
-            println!("signature={}", ipc::base64_encode(&signature));
-            Ok(())
-        }
-        Err(e) if e.contains("reauthentication_required") => {
-            // Reauthentication required
-            eprintln!("This SSH key requires password reauthentication");
-            let password =
-                Zeroizing::new(rpassword::prompt_password("Vault password: ")?);
-
-            // Try IPC first, fallback to local if desktop not running
-            let reauth_result = ipc::IpcClient::reauth_password(&password)
-                .or_else(|ipc_err| {
-                    if ipc_err.is_socket_unavailable() {
-                        // Desktop not running, use local reauth
-                        reauth_password(&password).map_err(|e| e.to_string())
-                    } else {
-                        // Other IPC error, propagate
-                        Err(ipc_err.to_string())
-                    }
-                });
-
-            reauth_result?;
-
-            // Retry sign with same pattern: IPC first, then local fallback
-            let signature = match ipc::IpcClient::sign(key_id, &data) {
-                Ok(sig) => sig,
-                Err(ipc::IpcError::SocketUnavailable(_)) => {
-                    sign_ssh_key(key_id, &data)
-                        .map(|sig| sig.signature)
-                        .map_err(|e| error_to_string(e, "sign"))?
-                }
-                Err(e) => Err(e.to_string())?,
-            };
-
-            println!("key_id={}", key_id);
-            println!("signature={}", ipc::base64_encode(&signature));
-            Ok(())
-        }
-        Err(e) => {
-            if e.contains("not running") {
-                eprintln!("Error: desktop app not running");
-                eprintln!("Hint: Start the desktop app to use this command");
             }
             Err(Box::new(std::io::Error::new(
                 std::io::ErrorKind::Other,

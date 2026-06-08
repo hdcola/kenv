@@ -1,6 +1,7 @@
 use crate::handlers;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
+use tauri::Emitter;
 use std::fs;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixListener;
@@ -23,9 +24,9 @@ struct Response {
     error: Option<String>,
 }
 
-pub fn start_socket_server() {
-    thread::spawn(|| {
-        if let Err(e) = run_socket_server() {
+pub fn start_socket_server(app_handle: tauri::AppHandle) {
+    thread::spawn(move || {
+        if let Err(e) = run_socket_server(app_handle) {
             eprintln!("Socket server error: {}", e);
         }
     });
@@ -36,7 +37,7 @@ fn socket_path() -> Result<PathBuf, String> {
     Ok(home.join(".kenv").join("desktop.sock"))
 }
 
-fn run_socket_server() -> Result<(), Box<dyn std::error::Error>> {
+fn run_socket_server(app_handle: tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let path = socket_path()?;
 
     // Create parent directory if needed
@@ -59,8 +60,9 @@ fn run_socket_server() -> Result<(), Box<dyn std::error::Error>> {
     for stream in listener.incoming() {
         match stream {
             Ok(mut socket) => {
+                let handle = app_handle.clone();
                 thread::spawn(move || {
-                    if let Err(e) = handle_client(&mut socket) {
+                    if let Err(e) = handle_client(&mut socket, handle) {
                         eprintln!("Client handler error: {}", e);
                     }
                 });
@@ -74,13 +76,16 @@ fn run_socket_server() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn handle_client(socket: &mut std::os::unix::net::UnixStream) -> Result<(), Box<dyn std::error::Error>> {
+fn handle_client(
+    socket: &mut std::os::unix::net::UnixStream,
+    app_handle: tauri::AppHandle,
+) -> Result<(), Box<dyn std::error::Error>> {
     // Read request with length-prefixed framing
     let request_bytes = read_message(socket)?;
     let request_str = String::from_utf8(request_bytes)?;
     let request: Request = serde_json::from_str(&request_str)?;
 
-    let response = handle_request(&request);
+    let response = handle_request(&request, &app_handle);
 
     let response_json = serde_json::to_string(&response)?;
     send_message(socket, response_json.as_bytes())?;
@@ -125,16 +130,23 @@ fn send_message(socket: &mut std::os::unix::net::UnixStream, payload: &[u8]) -> 
     Ok(())
 }
 
-fn handle_request(req: &Request) -> Response {
+fn emit_state_changed(app_handle: &tauri::AppHandle) {
+    let _ = app_handle.emit("vault-state-changed", ());
+}
+
+fn handle_request(req: &Request, app_handle: &tauri::AppHandle) -> Response {
     match req.method.as_str() {
         "unlock" => {
             match serde_json::from_value::<handlers::UnlockRequest>(req.params.clone()) {
                 Ok(unlock_req) => match handlers::handle_unlock(unlock_req) {
-                    Ok(result) => Response {
-                        success: true,
-                        result: Some(Value::String(result)),
-                        error: None,
-                    },
+                    Ok(result) => {
+                        emit_state_changed(app_handle);
+                        Response {
+                            success: true,
+                            result: Some(Value::String(result)),
+                            error: None,
+                        }
+                    }
                     Err(e) => Response {
                         success: false,
                         result: None,
@@ -172,35 +184,17 @@ fn handle_request(req: &Request) -> Response {
                 error: Some(e),
             },
         },
-        "sign" => {
-            match serde_json::from_value::<handlers::SignRequest>(req.params.clone()) {
-                Ok(sign_req) => match handlers::handle_sign(sign_req) {
-                    Ok(result) => Response {
-                        success: true,
-                        result: serde_json::to_value(&result).ok(),
-                        error: None,
-                    },
-                    Err(e) => Response {
-                        success: false,
-                        result: None,
-                        error: Some(e),
-                    },
-                },
-                Err(e) => Response {
-                    success: false,
-                    result: None,
-                    error: Some(format!("invalid params: {}", e)),
-                },
-            }
-        }
         "remove_slot" => {
             match serde_json::from_value::<handlers::RemoveSlotRequest>(req.params.clone()) {
                 Ok(remove_req) => match handlers::handle_remove_slot(remove_req) {
-                    Ok(result) => Response {
-                        success: true,
-                        result: Some(Value::String(result)),
-                        error: None,
-                    },
+                    Ok(result) => {
+                        emit_state_changed(app_handle);
+                        Response {
+                            success: true,
+                            result: Some(Value::String(result)),
+                            error: None,
+                        }
+                    }
                     Err(e) => Response {
                         success: false,
                         result: None,
@@ -248,11 +242,14 @@ fn handle_request(req: &Request) -> Response {
             },
         },
         "lock" => match handlers::handle_lock() {
-            Ok(result) => Response {
-                success: true,
-                result: Some(Value::String(result)),
-                error: None,
-            },
+            Ok(result) => {
+                emit_state_changed(app_handle);
+                Response {
+                    success: true,
+                    result: Some(Value::String(result)),
+                    error: None,
+                }
+            }
             Err(e) => Response {
                 success: false,
                 result: None,
@@ -262,11 +259,14 @@ fn handle_request(req: &Request) -> Response {
         "create" => {
             match req.params.get("password").and_then(|v| v.as_str()) {
                 Some(password) => match handlers::handle_create(password.to_string()) {
-                    Ok(result) => Response {
-                        success: true,
-                        result: Some(Value::String(result)),
-                        error: None,
-                    },
+                    Ok(result) => {
+                        emit_state_changed(app_handle);
+                        Response {
+                            success: true,
+                            result: Some(Value::String(result)),
+                            error: None,
+                        }
+                    }
                     Err(e) => Response {
                         success: false,
                         result: None,

@@ -1,7 +1,7 @@
 mod handlers;
 mod socket_server;
 
-use kenv_core::{SlotInfo, SshSignature, SshKeyInfo, VaultStatus};
+use kenv_core::{SlotInfo, SshKeyInfo, VaultStatus};
 use zeroize::Zeroize;
 
 #[tauri::command]
@@ -57,22 +57,13 @@ fn get_ssh_keys() -> Result<Vec<SshKeyInfo>, String> {
     kenv_core::list_ssh_keys().map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-fn sign_with_ssh_key(key_id: String, data: Vec<u8>) -> Result<SshSignature, String> {
-    match kenv_core::sign_ssh_key(&key_id, &data) {
-        Ok(sig) => Ok(sig),
-        Err(kenv_core::KenvError::UnlockFailed) => {
-            Err("reauthentication_required".to_string())
-        }
-        Err(e) => Err(e.to_string()),
-    }
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    socket_server::start_socket_server();
-
     tauri::Builder::default()
+        .setup(|app| {
+            socket_server::start_socket_server(app.handle().clone());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_vault_status,
             get_vault_slots,
@@ -81,8 +72,7 @@ pub fn run() {
             lock,
             remove_vault_slot,
             reauthenticate,
-            get_ssh_keys,
-            sign_with_ssh_key
+            get_ssh_keys
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
