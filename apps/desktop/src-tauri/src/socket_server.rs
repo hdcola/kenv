@@ -3,10 +3,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
 use std::io::{Read, Write};
-use std::os::unix::net::UnixListener;
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::thread;
 use tauri::Emitter;
+use zeroize::Zeroizing;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Request {
@@ -37,6 +38,14 @@ fn socket_path() -> Result<PathBuf, String> {
     Ok(home.join(".kenv").join("desktop.sock"))
 }
 
+struct SocketGuard(PathBuf);
+
+impl Drop for SocketGuard {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}
+
 fn run_socket_server(app_handle: tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let path = socket_path()?;
 
@@ -45,10 +54,15 @@ fn run_socket_server(app_handle: tauri::AppHandle) -> Result<(), Box<dyn std::er
         fs::create_dir_all(parent)?;
     }
 
-    // Remove old socket file if exists
-    let _ = fs::remove_file(&path);
+    if path.exists() {
+        if UnixStream::connect(&path).is_ok() {
+            return Err("another instance of kenv desktop is already running".into());
+        }
+        let _ = fs::remove_file(&path);
+    }
 
     let listener = UnixListener::bind(&path)?;
+    let _guard = SocketGuard(path.clone());
 
     // Set socket permissions to 0600
     #[cfg(unix)]
@@ -82,7 +96,7 @@ fn handle_client(
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Read request with length-prefixed framing
     let request_bytes = read_message(socket)?;
-    let request_str = String::from_utf8(request_bytes)?;
+    let request_str = Zeroizing::new(String::from_utf8(request_bytes)?);
     let request: Request = serde_json::from_str(&request_str)?;
 
     let response = handle_request(&request, &app_handle);
@@ -287,5 +301,22 @@ fn handle_request(req: &Request, app_handle: &tauri::AppHandle) -> Response {
             result: None,
             error: Some(format!("unknown method: {}", req.method)),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SocketGuard;
+    use std::path::PathBuf;
+
+    #[test]
+    fn socket_guard_removes_file_on_drop() {
+        let dir = tempfile::tempdir().unwrap();
+        let path: PathBuf = dir.path().join("test.sock");
+        std::fs::write(&path, b"").unwrap();
+        assert!(path.exists());
+        let guard = SocketGuard(path.clone());
+        drop(guard);
+        assert!(!path.exists());
     }
 }

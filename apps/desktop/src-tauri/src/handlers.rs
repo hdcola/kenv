@@ -1,5 +1,6 @@
 use kenv_core;
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroizing;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UnlockRequest {
@@ -37,7 +38,8 @@ pub struct RemoveSlotRequest {
 }
 
 pub fn handle_unlock(req: UnlockRequest) -> Result<String, String> {
-    kenv_core::unlock(&req.password)
+    let password = Zeroizing::new(req.password);
+    kenv_core::unlock(&password)
         .map_err(|e| e.to_string())
         .map(|_| "ok".to_string())
 }
@@ -82,6 +84,7 @@ pub fn handle_remove_slot(req: RemoveSlotRequest) -> Result<String, String> {
 }
 
 pub fn handle_reauth_password(password: String) -> Result<String, String> {
+    let password = Zeroizing::new(password);
     kenv_core::reauth_password(&password)
         .map_err(|e| e.to_string())
         .map(|_| "ok".to_string())

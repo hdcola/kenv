@@ -208,6 +208,21 @@ fn validate_rejects_too_short() {
     assert!(validate_vault_header(&[0u8; 10]).is_err());
 }
 
+#[test]
+fn validate_rejects_v2_with_bad_kdf_id() {
+    let f = NamedTempFile::new().unwrap();
+    let path = f.path().to_path_buf();
+    drop(f);
+    let mut salt = [0u8; 32];
+    let mut nonce = [0u8; 12];
+    salt[0] = 1;
+    nonce[0] = 1;
+    write_vault_file(&path, &salt, &nonce, &[0u8; 29], &p(), EMPTY_SLOTS, FILE_VERSION_V2).unwrap();
+    let mut b = std::fs::read(&path).unwrap();
+    b[5] = 0xFF;
+    assert!(validate_vault_header(&b).is_err());
+}
+
 #[cfg(not(unix))]
 #[test]
 fn write_vault_file_returns_platform_error_on_non_unix() {

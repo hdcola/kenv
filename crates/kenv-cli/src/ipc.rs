@@ -3,6 +3,7 @@ use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::time::Duration;
+use zeroize::Zeroizing;
 
 pub struct IpcClient;
 
@@ -123,7 +124,7 @@ impl IpcClient {
             "method": method,
             "params": params
         });
-        let request_str = request.to_string();
+        let request_str = Zeroizing::new(request.to_string());
 
         send_message(&mut stream, request_str.as_bytes())
             .map_err(|e| IpcError::RequestFailed(format!("failed to send request: {}", e)))?;

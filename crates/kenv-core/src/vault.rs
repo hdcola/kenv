@@ -598,8 +598,7 @@ pub fn validate_vault_header(data: &[u8]) -> Result<u8, KenvError> {
         return Err(KenvError::InvalidVaultFormat);
     }
 
-    // V2 uses same header as V1, so check KDF ID only for V1
-    if version == FILE_VERSION_V1 && data[5] != KDF_ID_ARGON2ID {
+    if data[5] != KDF_ID_ARGON2ID {
         return Err(KenvError::InvalidVaultFormat);
     }
 
