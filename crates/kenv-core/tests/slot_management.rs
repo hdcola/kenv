@@ -397,6 +397,54 @@ fn reauth_succeeds_on_different_thread_than_unlock() {
     vault::clear_test_vault_path();
 }
 
+// --- Task 3: remove_slot reauth guard must cover active non-password unlock slots ---
+
+#[test]
+#[serial]
+fn remove_nonpassword_active_unlock_slot_requires_reauth() {
+    use kenv_core::{
+        create_vault_at, crypto::KdfParams, inject_slot_for_test, reauth_password,
+        remove_slot, set_last_unlock_slot_id_for_test, slots, unlock, vault, KenvError,
+    };
+    use tempfile::TempDir;
+
+    let dir = TempDir::new().unwrap();
+    let vault_path = dir.path().join("vault.kenv");
+    create_vault_at(&vault_path, "pass", &KdfParams::for_tests()).unwrap();
+    vault::set_test_vault_path(vault_path);
+    unlock("pass").unwrap();
+
+    // Inject a fake CTAP2 slot — no real crypto data needed, we're testing the remove guard.
+    inject_slot_for_test(slots::UnlockSlot {
+        slot_id: 99,
+        slot_type: slots::SlotType::Ctap2,
+        label: "fake-hw".to_string(),
+        created_at: std::time::SystemTime::now(),
+        password: None,
+        ctap2: None,
+        touchid: None,
+        requires_pin: false,
+        requires_touch: false,
+        pin_attempts_left: None,
+        last_used: None,
+        disabled: false,
+    });
+    set_last_unlock_slot_id_for_test(Some(99));
+
+    // Without reauth: active non-password unlock slot must be blocked.
+    assert!(matches!(
+        remove_slot(99).unwrap_err(),
+        KenvError::UnlockFailed
+    ));
+
+    // With reauth: removal succeeds.
+    reauth_password("pass").unwrap();
+    remove_slot(99).unwrap();
+
+    kenv_core::lock().ok();
+    vault::clear_test_vault_path();
+}
+
 // --- Bug P1: reauth must verify against the slot that actually unlocked the session ---
 
 #[test]

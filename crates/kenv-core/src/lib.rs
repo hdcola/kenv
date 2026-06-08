@@ -557,9 +557,12 @@ pub fn remove_slot(slot_id: u8) -> Result<(), KenvError> {
             return Err(KenvError::VaultLocked);
         }
 
-        // Read reauth status from the guard we already hold; calling a helper that re-locks
-        // VAULT_STATE here would deadlock (the write lock is held below).
+        // Read fields from the guard we already hold before entering the mutable borrow below.
+        // Calling any helper that re-locks VAULT_STATE would deadlock (parking_lot::RwLock is
+        // not reentrant), and accessing these fields after `if let Some(ref mut payload) =
+        // state.payload` would violate the borrow rules.
         let reauthenticated = reauth_window_valid(state.reauthenticated_at);
+        let is_active_unlock_slot = state.last_unlock_slot_id == Some(slot_id);
 
         if let Some(ref mut payload) = state.payload {
             // Find the slot to remove
@@ -587,7 +590,9 @@ pub fn remove_slot(slot_id: u8) -> Result<(), KenvError> {
                 }
             }
 
-            if is_password_slot && !reauthenticated {
+            // Gate on password slot *or* the active unlock slot (covers future CTAP2/TouchID).
+            // `is_active_unlock_slot` was captured above before the mutable borrow.
+            if (is_password_slot || is_active_unlock_slot) && !reauthenticated {
                 return Err(KenvError::UnlockFailed); // Requires password reauthentication
             }
 
@@ -856,6 +861,27 @@ pub fn sign_ssh_key(key_id: &str, data_to_sign: &[u8]) -> Result<ssh::SshSignatu
     } else {
         Err(KenvError::VaultLocked)
     }
+}
+
+/// Inject an unlock slot into the unlocked vault payload. **Test-only helper.**
+///
+/// Requires the vault to already be unlocked (payload present). Used by integration tests
+/// to exercise remove-slot guards for non-password slot types without needing real CTAP2/TouchID
+/// hardware. Plain `pub` (not `#[cfg(test)]`) so integration test binaries can reach it.
+#[doc(hidden)]
+pub fn inject_slot_for_test(slot: slots::UnlockSlot) {
+    if let Some(ref mut payload) = VAULT_STATE.write().payload {
+        payload.slots.push(slot);
+    }
+}
+
+/// Override `last_unlock_slot_id` in the global vault state. **Test-only helper.**
+///
+/// Used by integration tests to simulate a non-password slot being the active unlock slot.
+/// Plain `pub` (not `#[cfg(test)]`) so integration test binaries can reach it.
+#[doc(hidden)]
+pub fn set_last_unlock_slot_id_for_test(id: Option<u8>) {
+    VAULT_STATE.write().last_unlock_slot_id = id;
 }
 
 /// Inject an SSH key into the unlocked vault payload. **Test-only helper.**
