@@ -403,8 +403,8 @@ fn reauth_succeeds_on_different_thread_than_unlock() {
 #[serial]
 fn remove_nonpassword_active_unlock_slot_requires_reauth() {
     use kenv_core::{
-        create_vault_at, crypto::KdfParams, inject_slot_for_test, reauth_password,
-        remove_slot, set_last_unlock_slot_id_for_test, slots, unlock, vault, KenvError,
+        create_vault_at, crypto::KdfParams, inject_slot_for_test, reauth_password, remove_slot,
+        set_last_unlock_slot_id_for_test, slots, unlock, vault, KenvError,
     };
     use tempfile::TempDir;
 
