@@ -226,6 +226,15 @@ impl IpcClient {
         Self::send_request("create", params)?;
         Ok(())
     }
+
+    /// Query the desktop's authoritative vault status.
+    pub fn status() -> Result<String, IpcError> {
+        let response = Self::send_request("status", json!({}))?;
+        response
+            .result
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .ok_or_else(|| IpcError::ResponseFailed("no status result in response".to_string()))
+    }
 }
 
 fn read_exact(stream: &mut UnixStream, buf: &mut [u8]) -> Result<(), String> {

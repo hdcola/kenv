@@ -8,7 +8,7 @@ pub mod vault;
 pub use ssh::{SshKeyInfo, SshSignature};
 
 use crate::crypto::KdfParams;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -44,9 +44,12 @@ struct VaultState {
     last_unlock_slot_id: Option<u8>,
     dek: Option<[u8; 32]>,
     reauthenticated_at: Option<SystemTime>,
+    /// FILE_SALT for V2 (random at creation, constant); KDF salt for V1 (used to re-derive key).
     salt: Option<[u8; 32]>,
+    /// Only populated for V1 vaults (KDF params live per-slot for V2).
     kdf_params: Option<KdfParams>,
     vault_path: Option<std::path::PathBuf>,
+    file_version: Option<u8>,
 }
 
 impl Default for VaultState {
@@ -60,6 +63,7 @@ impl Default for VaultState {
             salt: None,
             kdf_params: None,
             vault_path: None,
+            file_version: None,
         }
     }
 }
@@ -85,7 +89,13 @@ static VAULT_STATE: RwLock<VaultState> = RwLock::new(VaultState {
     salt: None,
     kdf_params: None,
     vault_path: None,
+    file_version: None,
 });
+
+/// Serializes disk writes from `persist_vault_state`. Acquired BEFORE `VAULT_STATE` is read
+/// for snapshotting, so concurrent slot operations cannot collide on the on-disk tmp file or
+/// produce interleaved rename ordering. Never acquired while holding any `VAULT_STATE` lock.
+static PERSIST_MUTEX: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Error)]
 pub enum KenvError {
@@ -158,31 +168,47 @@ pub fn create_vault_at(path: &Path, password: &str, params: &KdfParams) -> Resul
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|_| KenvError::FileOperationFailed)?;
     }
-    let mut salt = [0u8; 32];
-    let mut nonce = [0u8; 12];
-    rand::thread_rng().fill_bytes(&mut salt);
-    rand::thread_rng().fill_bytes(&mut nonce);
-    let key = Zeroizing::new(
-        crypto::derive_key(password, &salt, params).map_err(|_| KenvError::EncryptionError)?,
-    );
 
-    // Convert key to [u8; 32] for wrapping in password slot
-    let mut key_array = [0u8; 32];
-    key_array.copy_from_slice(&*key);
+    // Random file-identity salt (written to header bytes 18-49, never changes per vault).
+    let mut file_salt = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut file_salt);
 
-    // Create initial password slot wrapping the actual encryption key
-    let password_slot = create_password_slot(password, &key_array, 1, "password".to_string(), params)?;
+    // Random payload nonce (bytes 50-61, refreshed on every persist).
+    let mut payload_nonce = [0u8; 12];
+    rand::thread_rng().fill_bytes(&mut payload_nonce);
+
+    // Random DEK — NOT derived from the password; each slot wraps a copy of this DEK.
+    let dek = Zeroizing::new(dek::generate());
+    let mut dek_array = [0u8; 32];
+    dek_array.copy_from_slice(&*dek);
+
+    // Wrap the DEK in an initial password slot.
+    let password_slot = create_password_slot(password, &dek_array, 1, "password".to_string(), params)?;
 
     let mut payload = vault::VaultPayload::new();
     payload.slots.push(password_slot);
+
+    // Build the cleartext slot key-material section for V2.
+    let slot_records = vault::build_cleartext_slot_records(&payload.slots);
 
     let plaintext = {
         let data = serde_json::to_vec(&payload).map_err(|_| KenvError::FileOperationFailed)?;
         zeroize::Zeroizing::new(data)
     };
-    let ciphertext =
-        crypto::encrypt(&*key, &nonce, &plaintext).map_err(|_| KenvError::EncryptionError)?;
-    vault::write_vault_file(path, &salt, &nonce, &ciphertext, params, vault::FILE_VERSION_V2)
+    let ciphertext = crypto::encrypt(&dek_array, &payload_nonce, &plaintext)
+        .map_err(|_| KenvError::EncryptionError)?;
+
+    // KDF params in V2 header are unused (zeros); params live per-slot in slot_records.
+    let zero_params = KdfParams { m_cost: 0, t_cost: 0, p_cost: 0 };
+    vault::write_vault_file(
+        path,
+        &file_salt,
+        &payload_nonce,
+        &ciphertext,
+        &zero_params,
+        &slot_records,
+        vault::FILE_VERSION_V2,
+    )
 }
 
 pub fn unlock(password: &str) -> Result<VaultStatus, KenvError> {
@@ -191,69 +217,168 @@ pub fn unlock(password: &str) -> Result<VaultStatus, KenvError> {
         return Err(KenvError::VaultMissing);
     }
 
-    // Read vault file
     let data = std::fs::read(&path).map_err(|_| KenvError::FileOperationFailed)?;
+    let version = vault::validate_vault_header(&data)?;
 
-    // Validate header structure and get version
-    let _version = vault::validate_vault_header(&data)?;
-
-    // Extract header fields
-    let m_cost = u32::from_be_bytes(
-        data[6..10]
-            .try_into()
-            .map_err(|_| KenvError::InvalidVaultFormat)?,
-    );
-    let t_cost = u32::from_be_bytes(
-        data[10..14]
-            .try_into()
-            .map_err(|_| KenvError::InvalidVaultFormat)?,
-    );
-    let p_cost = u32::from_be_bytes(
-        data[14..18]
-            .try_into()
-            .map_err(|_| KenvError::InvalidVaultFormat)?,
-    );
-    let salt = &data[vault::SALT_OFFSET..vault::SALT_OFFSET + vault::SALT_SIZE];
-    let salt_array: [u8; 32] = salt
+    let salt_array: [u8; 32] = data[vault::SALT_OFFSET..vault::SALT_OFFSET + vault::SALT_SIZE]
         .try_into()
         .map_err(|_| KenvError::InvalidVaultFormat)?;
-    let nonce = &data[vault::NONCE_OFFSET..vault::NONCE_OFFSET + vault::NONCE_SIZE];
-    let nonce_array: [u8; 12] = nonce
-        .try_into()
-        .map_err(|_| KenvError::InvalidVaultFormat)?;
+    let nonce_array: [u8; 12] =
+        data[vault::NONCE_OFFSET..vault::NONCE_OFFSET + vault::NONCE_SIZE]
+            .try_into()
+            .map_err(|_| KenvError::InvalidVaultFormat)?;
 
-    let ciphertext = &data[vault::CIPHERTEXT_OFFSET..];
+    let (dek, unlock_slot_id, ciphertext, kdf_params_opt) = if version == vault::FILE_VERSION_V2 {
+        // V2: iterate cleartext slot records to unwrap the DEK.
+        let (records, ciphertext_start) = vault::parse_cleartext_slot_records(&data)?;
 
-    let params = KdfParams {
-        m_cost,
-        t_cost,
-        p_cost,
+        let mut found: Option<([u8; 32], u8)> = None; // (dek, slot_id)
+        for rec in &records {
+            if let vault::ParsedSlotKeyData::Password(ref pwd_data) = rec.key_data {
+                if let Ok(d) = slots::password::unwrap_dek(password, pwd_data) {
+                    found = Some((d, rec.slot_id));
+                    break;
+                }
+            }
+        }
+        let (dek, slot_id) = found.ok_or(KenvError::UnlockFailed)?;
+        (dek, Some(slot_id), &data[ciphertext_start..], None)
+    } else {
+        // V1: re-derive the DEK from the header salt (single-password format).
+        let m_cost = u32::from_be_bytes(
+            data[6..10].try_into().map_err(|_| KenvError::InvalidVaultFormat)?,
+        );
+        let t_cost = u32::from_be_bytes(
+            data[10..14].try_into().map_err(|_| KenvError::InvalidVaultFormat)?,
+        );
+        let p_cost = u32::from_be_bytes(
+            data[14..18].try_into().map_err(|_| KenvError::InvalidVaultFormat)?,
+        );
+        let params = KdfParams { m_cost, t_cost, p_cost };
+        let key_bytes = crypto::derive_key(password, &salt_array, &params)
+            .map_err(|_| KenvError::EncryptionError)?;
+        let mut dek = [0u8; 32];
+        dek.copy_from_slice(&key_bytes);
+        // V1 is single-password; no slot_id tracking.
+        (dek, None, &data[vault::CIPHERTEXT_OFFSET..], Some(params))
     };
 
-    // Derive DEK from password
-    let key_bytes = crypto::derive_key(password, &salt_array, &params)
-        .map_err(|_| KenvError::EncryptionError)?;
-    let mut dek: [u8; 32] = [0u8; 32];
-    dek.copy_from_slice(&key_bytes);
-    let key = Zeroizing::new(key_bytes);
-
-    // Decrypt payload
-    let plaintext = crypto::decrypt(&*key, &nonce_array, ciphertext)
-        .map_err(|_| KenvError::UnlockFailed)?;
-
-    // Deserialize payload
+    let plaintext =
+        crypto::decrypt(&dek, &nonce_array, ciphertext).map_err(|_| KenvError::UnlockFailed)?;
     let payload: vault::VaultPayload =
         serde_json::from_slice(&plaintext).map_err(|_| KenvError::EncryptionError)?;
 
-    // Store in memory and return success
+    // Replace VaultState wholesale to zeroize prior secrets and reset all session fields.
+    // See the comment in the previous implementation for the full rationale.
     {
         let mut state = VAULT_STATE.write();
-        state.payload = Some(payload);
-        state.dek = Some(dek);
-        state.unlocked_at = Some(SystemTime::now());
-        state.salt = Some(salt_array);
-        state.kdf_params = Some(params);
-        state.vault_path = Some(path.clone());
+        if let Some(ref mut p) = state.payload {
+            p.zeroize();
+        }
+        if let Some(ref mut d) = state.dek {
+            d.zeroize();
+        }
+        if let Some(ref mut s) = state.salt {
+            s.zeroize();
+        }
+        *state = VaultState {
+            payload: Some(payload),
+            unlocked_at: Some(SystemTime::now()),
+            last_unlock_slot_id: unlock_slot_id,
+            dek: Some(dek),
+            reauthenticated_at: None,
+            salt: Some(salt_array),
+            kdf_params: kdf_params_opt,
+            vault_path: Some(path.clone()),
+            file_version: Some(version),
+        };
+    }
+
+    Ok(VaultStatus::Unlocked)
+}
+
+/// Unlock the vault using Touch ID (macOS Secure Enclave / Keychain).
+///
+/// Iterates V2 cleartext TouchID slot records; for each one calls
+/// `slots::touchid::unwrap_dek` which triggers a biometric prompt. Returns
+/// `UnlockFailed` if no TouchID slot can be unwrapped, or
+/// `PlatformCapabilityUnavailable` on non-macOS builds.
+pub fn unlock_with_touchid() -> Result<VaultStatus, KenvError> {
+    let path = vault::vault_path()?;
+    if !path.exists() {
+        return Err(KenvError::VaultMissing);
+    }
+
+    let data = std::fs::read(&path).map_err(|_| KenvError::FileOperationFailed)?;
+    let version = vault::validate_vault_header(&data)?;
+
+    if version != vault::FILE_VERSION_V2 {
+        // V1 vaults have no slot section; TouchID unlock requires V2.
+        return Err(KenvError::PlatformCapabilityUnavailable);
+    }
+
+    let salt_array: [u8; 32] = data[vault::SALT_OFFSET..vault::SALT_OFFSET + vault::SALT_SIZE]
+        .try_into()
+        .map_err(|_| KenvError::InvalidVaultFormat)?;
+    let nonce_array: [u8; 12] =
+        data[vault::NONCE_OFFSET..vault::NONCE_OFFSET + vault::NONCE_SIZE]
+            .try_into()
+            .map_err(|_| KenvError::InvalidVaultFormat)?;
+
+    let (records, ciphertext_start) = vault::parse_cleartext_slot_records(&data)?;
+    let ciphertext = &data[ciphertext_start..];
+
+    let mut found: Option<([u8; 32], u8)> = None;
+    for rec in &records {
+        if let vault::ParsedSlotKeyData::TouchId {
+            keychain_ref,
+            nonce,
+            encrypted_dek,
+            tag,
+        } = &rec.key_data
+        {
+            let stub = slots::TouchIdSlotData {
+                keychain_ref: keychain_ref.clone(),
+                nonce: *nonce,
+                encrypted_dek: encrypted_dek.clone(),
+                tag: *tag,
+                biometric_type: "touchid".to_string(),
+            };
+            if let Ok(d) = slots::touchid::unwrap_dek(&stub) {
+                found = Some((d, rec.slot_id));
+                break;
+            }
+        }
+    }
+    let (dek, unlock_slot_id) = found.ok_or(KenvError::UnlockFailed)?;
+
+    let plaintext =
+        crypto::decrypt(&dek, &nonce_array, ciphertext).map_err(|_| KenvError::UnlockFailed)?;
+    let payload: vault::VaultPayload =
+        serde_json::from_slice(&plaintext).map_err(|_| KenvError::EncryptionError)?;
+
+    {
+        let mut state = VAULT_STATE.write();
+        if let Some(ref mut p) = state.payload {
+            p.zeroize();
+        }
+        if let Some(ref mut d) = state.dek {
+            d.zeroize();
+        }
+        if let Some(ref mut s) = state.salt {
+            s.zeroize();
+        }
+        *state = VaultState {
+            payload: Some(payload),
+            unlocked_at: Some(SystemTime::now()),
+            last_unlock_slot_id: Some(unlock_slot_id),
+            dek: Some(dek),
+            reauthenticated_at: None,
+            salt: Some(salt_array),
+            kdf_params: None,
+            vault_path: Some(path.clone()),
+            file_version: Some(vault::FILE_VERSION_V2),
+        };
     }
 
     Ok(VaultStatus::Unlocked)
@@ -266,13 +391,13 @@ pub fn lock() -> Result<(), KenvError> {
 }
 
 fn persist_vault_state() -> Result<(), KenvError> {
+    let _persist_guard = PERSIST_MUTEX.lock();
     let state = VAULT_STATE.read();
     let payload = state.payload.as_ref().ok_or(KenvError::VaultLocked)?;
     let dek = state.dek.ok_or(KenvError::VaultLocked)?;
     let salt = state.salt.ok_or(KenvError::VaultLocked)?;
-    let kdf_params = state.kdf_params.clone().ok_or(KenvError::VaultLocked)?;
+    let file_version = state.file_version.unwrap_or(vault::FILE_VERSION_V2);
 
-    // Re-encrypt payload with stored DEK and fresh nonce
     let mut nonce = [0u8; 12];
     rand::thread_rng().fill_bytes(&mut nonce);
     let plaintext = {
@@ -282,9 +407,23 @@ fn persist_vault_state() -> Result<(), KenvError> {
     let ciphertext =
         crypto::encrypt(&dek, &nonce, &plaintext).map_err(|_| KenvError::EncryptionError)?;
 
-    // Overwrite the existing vault atomically with v2 format
     let vault_path = vault::vault_path()?;
-    vault::overwrite_vault_file(&vault_path, &salt, &nonce, &ciphertext, &kdf_params, vault::FILE_VERSION_V2)
+
+    if file_version == vault::FILE_VERSION_V2 {
+        // Rebuild cleartext slot records from current in-memory slot list.
+        let slot_records = vault::build_cleartext_slot_records(&payload.slots);
+        let zero_params = KdfParams { m_cost: 0, t_cost: 0, p_cost: 0 };
+        vault::overwrite_vault_file(
+            &vault_path, &salt, &nonce, &ciphertext, &zero_params, &slot_records,
+            vault::FILE_VERSION_V2,
+        )
+    } else {
+        let kdf_params = state.kdf_params.clone().ok_or(KenvError::VaultLocked)?;
+        vault::overwrite_vault_file(
+            &vault_path, &salt, &nonce, &ciphertext, &kdf_params, &[],
+            vault::FILE_VERSION_V1,
+        )
+    }
 }
 
 pub fn get_vault_status() -> Result<VaultStatus, KenvError> {
@@ -512,11 +651,27 @@ pub fn reauth_password(password: &str) -> Result<(), KenvError> {
         }
 
         if let Some(ref payload) = state.payload {
-            // Find password slot
-            let password_slot = payload
-                .slots
-                .iter()
-                .find(|s| s.slot_type == slots::SlotType::Password && !s.disabled);
+            // Prefer the slot that was actually used to unlock this session. This ensures
+            // multi-password vaults verify against the right password — otherwise a vault
+            // with slot 1 (password A) and slot 2 (password B) would always verify against
+            // slot 1, silently failing when the user unlocked with slot 2's password.
+            // Fall back to any enabled password slot if last_unlock_slot_id is missing or
+            // the specific slot was subsequently deleted.
+            let target_id = state.last_unlock_slot_id;
+            let password_slot = target_id
+                .and_then(|id| {
+                    payload.slots.iter().find(|s| {
+                        s.slot_id == id
+                            && s.slot_type == slots::SlotType::Password
+                            && !s.disabled
+                    })
+                })
+                .or_else(|| {
+                    payload
+                        .slots
+                        .iter()
+                        .find(|s| s.slot_type == slots::SlotType::Password && !s.disabled)
+                });
 
             if let Some(slot) = password_slot {
                 // Verify password against password slot
@@ -560,6 +715,52 @@ pub fn reauth_password(password: &str) -> Result<(), KenvError> {
     }
 
     Ok(())
+}
+
+/// Add a new password-based unlock slot, wrapping the vault DEK with the given password.
+///
+/// Requires the vault to be unlocked. The new slot gets a `slot_id` one above the current
+/// maximum. On success, the updated slot list is persisted to disk.
+pub fn add_password_slot(password: &str, params: &KdfParams) -> Result<(), KenvError> {
+    if password.trim().is_empty() {
+        return Err(KenvError::WeakPassword);
+    }
+
+    // Read DEK and compute next slot_id under a short-lived read guard.
+    // [u8; 32] is Copy, so we can safely move a copy out before dropping the guard.
+    let (dek_raw, next_slot_id) = {
+        let state = VAULT_STATE.read();
+        let dek = state.dek.ok_or(KenvError::VaultLocked)?;
+        let next_id = state
+            .payload
+            .as_ref()
+            .map(|p| {
+                let max_id = p.slots.iter().map(|s| s.slot_id as u16).max().unwrap_or(0);
+                (max_id + 1).min(255) as u8
+            })
+            .ok_or(KenvError::VaultLocked)?;
+        (dek, next_id)
+    };
+    let dek = Zeroizing::new(dek_raw);
+
+    let password_data = slots::password::wrap_dek(password, &*dek, params)?;
+
+    let slot = slots::UnlockSlot {
+        slot_id: next_slot_id,
+        slot_type: slots::SlotType::Password,
+        label: "password".to_string(),
+        created_at: std::time::SystemTime::now(),
+        password: Some(password_data),
+        ctap2: None,
+        touchid: None,
+        requires_pin: false,
+        requires_touch: false,
+        pin_attempts_left: None,
+        last_used: None,
+        disabled: false,
+    };
+
+    add_slot(slot)
 }
 
 /// List SSH keys with metadata (non-secret information)

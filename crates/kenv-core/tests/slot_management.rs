@@ -1,5 +1,5 @@
 use kenv_core::{
-    add_slot, list_slots, remove_slot, rename_slot,
+    add_password_slot, add_slot, list_slots, remove_slot, rename_slot,
     slots::{UnlockSlot, SlotType},
 };
 use serial_test::serial;
@@ -177,23 +177,6 @@ fn ctap2_slot(slot_id: u8, label: &str) -> UnlockSlot {
     }
 }
 
-/// Build a (metadata-only) password unlock slot used to exercise the last-password-slot guard.
-fn password_slot(slot_id: u8, label: &str) -> UnlockSlot {
-    UnlockSlot {
-        slot_id,
-        slot_type: SlotType::Password,
-        label: label.to_string(),
-        created_at: SystemTime::now(),
-        password: None,
-        ctap2: None,
-        touchid: None,
-        requires_pin: false,
-        requires_touch: false,
-        pin_attempts_left: None,
-        last_used: None,
-        disabled: false,
-    }
-}
 
 /// Create a fast vault (cheap test KDF params) at `path` and route `vault_path()` to it on the
 /// current thread. Using `for_tests` params keeps these serial tests off the slow Argon2 path.
@@ -326,7 +309,7 @@ fn cannot_remove_last_password_slot() {
 #[serial]
 fn can_remove_password_slot_when_another_remains() {
     use tempfile::TempDir;
-    use kenv_core::{add_slot, lock, reauth_password, unlock, vault};
+    use kenv_core::{lock, reauth_password, unlock, vault, crypto::KdfParams};
 
     vault::clear_test_vault_path();
     lock().ok();
@@ -338,16 +321,18 @@ fn can_remove_password_slot_when_another_remains() {
     create_test_vault(&vault_path, password);
     unlock(password).expect("failed to unlock");
 
-    // Two enabled password slots now exist; removing one is allowed (with reauth).
-    add_slot(password_slot(2, "backup")).expect("add second password slot");
+    // Add a REAL second password slot that wraps the vault DEK.
+    // After slot 1 is deleted, this slot must be the only way to unlock the vault.
+    add_password_slot(password, &KdfParams::for_tests()).expect("add second password slot");
     reauth_password(password).expect("reauth should succeed");
     remove_slot(1).expect("removing a non-last password slot should succeed");
 
+    // Verify slot 2's cleartext key record allows the vault to be re-opened.
     lock().ok();
-    unlock(password).expect("failed to re-unlock");
+    unlock(password).expect("re-unlock via backup slot must succeed");
     let slots = list_slots().expect("list_slots after reload");
     assert!(slots.iter().all(|s| s.slot_id != 1), "removed slot stays gone");
-    assert!(slots.iter().any(|s| s.slot_id == 2), "remaining password slot persists");
+    assert!(slots.iter().any(|s| s.slot_id == 2), "backup slot persists");
 
     lock().ok();
     vault::clear_test_vault_path();
@@ -393,6 +378,51 @@ fn reauth_succeeds_on_different_thread_than_unlock() {
         .join()
         .unwrap();
     }
+
+    lock().ok();
+    vault::clear_test_vault_path();
+}
+
+// --- Bug P1: reauth must verify against the slot that actually unlocked the session ---
+
+#[test]
+#[serial]
+fn reauth_uses_unlock_slot_not_first_slot() {
+    use tempfile::TempDir;
+    use kenv_core::{lock, reauth_password, unlock, vault, crypto::KdfParams};
+
+    vault::clear_test_vault_path();
+    lock().ok();
+
+    let temp_dir = TempDir::new().unwrap();
+    let vault_path = temp_dir.path().join("vault.kenv");
+    let password1 = "first_password";
+    let password2 = "second_password";
+
+    // Vault created with password1 (slot 1).
+    create_test_vault(&vault_path, password1);
+    unlock(password1).expect("unlock with password1");
+
+    // Add slot 2 with a *different* password.
+    add_password_slot(password2, &KdfParams::for_tests())
+        .expect("add second password slot");
+
+    lock().ok();
+
+    // Unlock using slot 2's password; last_unlock_slot_id should be set to 2.
+    unlock(password2).expect("unlock with password2");
+
+    // reauth with password2 must succeed (it targets slot 2).
+    reauth_password(password2)
+        .expect("reauth with password2 must succeed after unlocking with it");
+
+    // reauth with password1 must fail — slot 2 requires password2.
+    let err = reauth_password(password1).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "unlock failed",
+        "reauth with the wrong slot's password must fail"
+    );
 
     lock().ok();
     vault::clear_test_vault_path();

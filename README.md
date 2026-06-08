@@ -70,7 +70,8 @@ The checklist below tracks implemented repository status today, not just the int
 
 - [x] `kenv status` prints a script-friendly vault status
 - [x] `kenv create`, `kenv unlock`, and `kenv lock` are implemented
-- [x] `kenv slots`, `kenv keys`, `kenv remove-slot`, and `kenv sign` are implemented
+- [x] `kenv slots`, `kenv keys`, and `kenv remove-slot` are implemented
+- [ ] `kenv sign` is implemented (CLI subcommand exists; core returns `SshSigningNotImplemented`)
 - [ ] Context listing command is implemented
 - [ ] Context activation command is implemented
 - [ ] Shell-consumable env export output is implemented

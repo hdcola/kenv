@@ -235,6 +235,18 @@ fn handle_request(req: &Request) -> Response {
                 },
             }
         }
+        "status" => match handlers::handle_status() {
+            Ok(result) => Response {
+                success: true,
+                result: Some(Value::String(result)),
+                error: None,
+            },
+            Err(e) => Response {
+                success: false,
+                result: None,
+                error: Some(e),
+            },
+        },
         "lock" => match handlers::handle_lock() {
             Ok(result) => Response {
                 success: true,

@@ -62,7 +62,16 @@ fn main() {
 }
 
 fn print_status() -> Result<(), Box<dyn std::error::Error>> {
-    let output = render_status(get_vault_status)?;
+    // Try the desktop IPC first — it holds the long-lived VAULT_STATE that reflects real
+    // unlock/lock operations. Fall back to the local get_vault_status() only when the
+    // desktop is not running; in that case the vault can only be missing or locked.
+    let output = match ipc::IpcClient::status() {
+        Ok(status_str) => format!("vault_status={}", status_str),
+        Err(ipc::IpcError::SocketUnavailable(_)) => render_status(get_vault_status)?,
+        Err(e) => {
+            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)))
+        }
+    };
     println!("{output}");
     Ok(())
 }

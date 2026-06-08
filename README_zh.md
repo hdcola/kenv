@@ -68,7 +68,8 @@ MVP 必须包含桌面端和 CLI 两个入口，但不会承诺完整替代 `ssh
 
 - [x] `kenv status` 可输出适合脚本消费的 vault 状态
 - [x] `kenv create`、`kenv unlock` 和 `kenv lock` 已实现
-- [x] `kenv slots`、`kenv keys`、`kenv remove-slot` 和 `kenv sign` 已实现
+- [x] `kenv slots`、`kenv keys` 和 `kenv remove-slot` 已实现
+- [ ] `kenv sign` 已实现（CLI 子命令已接入，核心仍返回 `SshSigningNotImplemented`）
 - [ ] context 列表命令已实现
 - [ ] context 激活命令已实现
 - [ ] shell 可消费的环境变量导出输出已实现

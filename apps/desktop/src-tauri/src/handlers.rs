@@ -207,6 +207,12 @@ pub fn handle_create(password: String) -> Result<String, String> {
         .map(|_| "vault_status=locked".to_string())
 }
 
+pub fn handle_status() -> Result<String, String> {
+    kenv_core::get_vault_status()
+        .map(|s| s.as_script_value().to_string())
+        .map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
