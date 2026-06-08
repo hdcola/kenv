@@ -426,6 +426,10 @@ pub fn lock() -> Result<(), KenvError> {
 }
 
 fn persist_vault_state() -> Result<(), KenvError> {
+    #[cfg(test)]
+    if FAIL_NEXT_PERSIST.swap(false, std::sync::atomic::Ordering::SeqCst) {
+        return Err(KenvError::FileOperationFailed);
+    }
     let _persist_guard = PERSIST_MUTEX.lock();
     let state = VAULT_STATE.read();
     let payload = state.payload.as_ref().ok_or(KenvError::VaultLocked)?;
@@ -1005,4 +1009,16 @@ pub fn test_insert_ssh_key(key: ssh::SshKey) {
         .payload
         .as_mut()
         .map(|p| p.ssh_keys.push(key));
+}
+
+#[cfg(test)]
+static FAIL_NEXT_PERSIST: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Arms a single-shot persist failure. The next call to `persist_vault_state`
+/// returns `FileOperationFailed` and clears the flag automatically.
+#[doc(hidden)]
+#[cfg(test)]
+pub fn arm_fail_next_persist_for_test() {
+    FAIL_NEXT_PERSIST.store(true, std::sync::atomic::Ordering::SeqCst);
 }
