@@ -5,32 +5,13 @@
 //! kdf_params/vault_path were overwritten; reauthenticated_at survived.
 
 use kenv_core::{
-    add_slot, create_vault_at,
+    add_password_slot, create_vault_at,
     crypto::KdfParams,
     lock, reauth_password, remove_slot,
-    slots::{SlotType, UnlockSlot},
     unlock, vault, KenvError,
 };
 use serial_test::serial;
-use std::time::SystemTime;
 use tempfile::TempDir;
-
-fn password_slot_meta(slot_id: u8, label: &str) -> UnlockSlot {
-    UnlockSlot {
-        slot_id,
-        slot_type: SlotType::Password,
-        label: label.to_string(),
-        created_at: SystemTime::now(),
-        password: None,
-        ctap2: None,
-        touchid: None,
-        requires_pin: false,
-        requires_touch: false,
-        pin_attempts_left: None,
-        last_used: None,
-        disabled: false,
-    }
-}
 
 #[test]
 #[serial]
@@ -49,7 +30,8 @@ fn unlock_clears_previous_reauth_window() {
 
     // Two password slots so the last-password-slot guard does not preempt the
     // reauth check we actually want to exercise.
-    add_slot(password_slot_meta(2, "second")).expect("add second password slot");
+    // add_password_slot auto-assigns slot_id=2 (max([1])+1).
+    add_password_slot(password, &KdfParams::for_tests()).expect("add second password slot");
 
     // Reauth opens the 5-minute window in session A.
     reauth_password(password).expect("reauth in session A");
@@ -57,8 +39,8 @@ fn unlock_clears_previous_reauth_window() {
     // Sanity: in session A, removing the second password slot is allowed.
     remove_slot(2).expect("remove within active reauth window");
 
-    // Re-add it, reauth again, then lock to end session A.
-    add_slot(password_slot_meta(2, "second")).expect("re-add second password slot");
+    // Re-add it (gets slot_id=2 again), reauth again, then lock to end session A.
+    add_password_slot(password, &KdfParams::for_tests()).expect("re-add second password slot");
     reauth_password(password).expect("reauth again before lock");
 
     lock().ok();

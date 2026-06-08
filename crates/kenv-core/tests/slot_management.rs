@@ -1,6 +1,6 @@
 use kenv_core::{
     add_password_slot, add_slot, list_slots, remove_slot, rename_slot,
-    slots::{SlotType, UnlockSlot},
+    slots::{Ctap2SlotData, SlotType, UnlockSlot},
 };
 use serial_test::serial;
 use std::time::SystemTime;
@@ -164,7 +164,21 @@ fn ctap2_slot(slot_id: u8, label: &str) -> UnlockSlot {
         label: label.to_string(),
         created_at: SystemTime::now(),
         password: None,
-        ctap2: None,
+        ctap2: Some(Ctap2SlotData {
+            credential_id: vec![slot_id],
+            public_key: vec![0u8; 65],
+            challenge: vec![0u8; 32],
+            counter: 0,
+            algorithm: -7,
+            device_serial: None,
+            attestation_data: None,
+            nonce: [0u8; 12],
+            encrypted_dek: vec![0u8; 32],
+            tag: [0u8; 16],
+            requires_pin: false,
+            requires_uv: false,
+            requires_touch: false,
+        }),
         touchid: None,
         requires_pin: false,
         requires_touch: true,
@@ -483,6 +497,92 @@ fn reauth_uses_unlock_slot_not_first_slot() {
         "unlock failed",
         "reauth with the wrong slot's password must fail"
     );
+
+    lock().ok();
+    vault::clear_test_vault_path();
+}
+
+fn bare_slot(slot_id: u8, slot_type: SlotType) -> UnlockSlot {
+    UnlockSlot {
+        slot_id,
+        slot_type,
+        label: "bare".to_string(),
+        created_at: SystemTime::now(),
+        password: None,
+        ctap2: None,
+        touchid: None,
+        requires_pin: false,
+        requires_touch: false,
+        pin_attempts_left: None,
+        last_used: None,
+        disabled: false,
+    }
+}
+
+#[test]
+#[serial]
+fn add_slot_rejects_password_slot_without_password_data() {
+    use kenv_core::{lock, unlock, vault, KenvError};
+    use tempfile::TempDir;
+
+    vault::clear_test_vault_path();
+    lock().ok();
+
+    let temp_dir = TempDir::new().unwrap();
+    let vault_path = temp_dir.path().join("vault.kenv");
+    let params = kenv_core::crypto::KdfParams::for_tests();
+    kenv_core::create_vault_at(&vault_path, "pass", &params).expect("create vault");
+    vault::set_test_vault_path(vault_path);
+    unlock("pass").expect("unlock");
+
+    let err = add_slot(bare_slot(10, SlotType::Password)).unwrap_err();
+    assert!(matches!(err, KenvError::InvalidSlotData), "got {err}");
+
+    lock().ok();
+    vault::clear_test_vault_path();
+}
+
+#[test]
+#[serial]
+fn add_slot_rejects_ctap2_slot_without_ctap2_data() {
+    use kenv_core::{lock, unlock, vault, KenvError};
+    use tempfile::TempDir;
+
+    vault::clear_test_vault_path();
+    lock().ok();
+
+    let temp_dir = TempDir::new().unwrap();
+    let vault_path = temp_dir.path().join("vault.kenv");
+    let params = kenv_core::crypto::KdfParams::for_tests();
+    kenv_core::create_vault_at(&vault_path, "pass", &params).expect("create vault");
+    vault::set_test_vault_path(vault_path);
+    unlock("pass").expect("unlock");
+
+    let err = add_slot(bare_slot(11, SlotType::Ctap2)).unwrap_err();
+    assert!(matches!(err, KenvError::InvalidSlotData), "got {err}");
+
+    lock().ok();
+    vault::clear_test_vault_path();
+}
+
+#[test]
+#[serial]
+fn add_slot_rejects_touchid_slot_without_touchid_data() {
+    use kenv_core::{lock, unlock, vault, KenvError};
+    use tempfile::TempDir;
+
+    vault::clear_test_vault_path();
+    lock().ok();
+
+    let temp_dir = TempDir::new().unwrap();
+    let vault_path = temp_dir.path().join("vault.kenv");
+    let params = kenv_core::crypto::KdfParams::for_tests();
+    kenv_core::create_vault_at(&vault_path, "pass", &params).expect("create vault");
+    vault::set_test_vault_path(vault_path);
+    unlock("pass").expect("unlock");
+
+    let err = add_slot(bare_slot(12, SlotType::TouchId)).unwrap_err();
+    assert!(matches!(err, KenvError::InvalidSlotData), "got {err}");
 
     lock().ok();
     vault::clear_test_vault_path();

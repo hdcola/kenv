@@ -139,6 +139,8 @@ pub enum KenvError {
     WeakPassword,
     #[error("cannot remove the last password slot")]
     LastPasswordSlot,
+    #[error("slot data is invalid for the given slot type")]
+    InvalidSlotData,
 }
 
 pub fn create_vault(password: &str) -> Result<(), KenvError> {
@@ -527,6 +529,13 @@ pub fn add_slot(slot: slots::UnlockSlot) -> Result<(), KenvError> {
         // Require vault to be unlocked
         if state.payload.is_none() {
             return Err(KenvError::VaultLocked);
+        }
+
+        // Fail fast: reject slots where slot_type and key material are inconsistent.
+        // build_cleartext_slot_records silently drops such slots, which would leave the
+        // vault unable to reopen via this slot after the next lock/unlock cycle.
+        if !slot.has_key_material() {
+            return Err(KenvError::InvalidSlotData);
         }
 
         // Add slot to payload

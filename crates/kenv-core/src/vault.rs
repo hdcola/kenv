@@ -87,11 +87,7 @@ pub fn build_cleartext_slot_records(slot_list: &[slots::UnlockSlot]) -> Vec<u8> 
 }
 
 fn slot_has_key_material(slot: &slots::UnlockSlot) -> bool {
-    match slot.slot_type {
-        slots::SlotType::Password => slot.password.is_some(),
-        slots::SlotType::Ctap2 => slot.ctap2.is_some(),
-        slots::SlotType::TouchId => slot.touchid.is_some(),
-    }
+    slot.has_key_material()
 }
 
 fn encode_slot_key_payload(slot: &slots::UnlockSlot) -> Vec<u8> {
