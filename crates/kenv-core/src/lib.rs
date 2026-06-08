@@ -426,7 +426,6 @@ pub fn lock() -> Result<(), KenvError> {
 }
 
 fn persist_vault_state() -> Result<(), KenvError> {
-    #[cfg(test)]
     if FAIL_NEXT_PERSIST.swap(false, std::sync::atomic::Ordering::SeqCst) {
         return Err(KenvError::FileOperationFailed);
     }
@@ -1011,14 +1010,16 @@ pub fn test_insert_ssh_key(key: ssh::SshKey) {
         .map(|p| p.ssh_keys.push(key));
 }
 
-#[cfg(test)]
 static FAIL_NEXT_PERSIST: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 /// Arms a single-shot persist failure. The next call to `persist_vault_state`
 /// returns `FileOperationFailed` and clears the flag automatically.
+///
+/// Plain `pub` (not `#[cfg(test)]`) so integration test binaries can reach it
+/// (integration tests link the lib in non-test mode, so `#[cfg(test)]` is not
+/// compiled into the integration test binary).
 #[doc(hidden)]
-#[cfg(test)]
 pub fn arm_fail_next_persist_for_test() {
     FAIL_NEXT_PERSIST.store(true, std::sync::atomic::Ordering::SeqCst);
 }
