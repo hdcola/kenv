@@ -35,7 +35,13 @@ impl VaultStatus {
     }
 }
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
+
+/// Monotonically-increasing generation counter. Incremented on every `unlock()` so that
+/// `reauth_password()` can detect a session change between its verify step (read lock) and
+/// its stamp step (write lock).  Value 0 is the locked-state sentinel used by `Default`.
+static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone)]
 struct VaultState {
@@ -50,6 +56,10 @@ struct VaultState {
     kdf_params: Option<KdfParams>,
     vault_path: Option<std::path::PathBuf>,
     file_version: Option<u8>,
+    /// Generation counter snapshotted from `NEXT_SESSION_ID` when this session was opened.
+    /// 0 means "locked / no session".  Used by `reauth_password` to detect a session change
+    /// between its read-lock verify step and its write-lock stamp step.
+    session_id: u64,
 }
 
 impl Default for VaultState {
@@ -64,6 +74,7 @@ impl Default for VaultState {
             kdf_params: None,
             vault_path: None,
             file_version: None,
+            session_id: 0,
         }
     }
 }
@@ -90,6 +101,7 @@ static VAULT_STATE: RwLock<VaultState> = RwLock::new(VaultState {
     kdf_params: None,
     vault_path: None,
     file_version: None,
+    session_id: 0,
 });
 
 /// Serializes disk writes from `persist_vault_state`. Acquired BEFORE `VAULT_STATE` is read
@@ -305,6 +317,7 @@ pub fn unlock(password: &str) -> Result<VaultStatus, KenvError> {
             kdf_params: kdf_params_opt,
             vault_path: Some(path.clone()),
             file_version: Some(version),
+            session_id: NEXT_SESSION_ID.fetch_add(1, Ordering::SeqCst),
         };
     }
 
@@ -391,6 +404,7 @@ pub fn unlock_with_touchid() -> Result<VaultStatus, KenvError> {
             kdf_params: None,
             vault_path: Some(path.clone()),
             file_version: Some(vault::FILE_VERSION_V2),
+            session_id: NEXT_SESSION_ID.fetch_add(1, Ordering::SeqCst),
         };
     }
 
@@ -669,9 +683,20 @@ pub fn rename_slot(slot_id: u8, new_label: String) -> Result<(), KenvError> {
 /// On success, sets an internal reauthentication flag (timeout-based).
 /// On failure, returns UnlockFailed.
 pub fn reauth_password(password: &str) -> Result<(), KenvError> {
+    // Captured here (outer scope) so the write-lock block can see it.
+    // Assigned as the first statement inside the read-lock block so it is always
+    // initialized before any early return; if the function exits early, the write-lock
+    // block is never reached and the value is never used.
+    let snapshot_session_id;
+
     // Verify password (requires read lock)
     {
         let state = VAULT_STATE.read();
+
+        // Snapshot session_id immediately.  After the read lock drops, a concurrent
+        // lock() or unlock() could replace VaultState wholesale.  We re-check this ID
+        // under the write lock to prevent cross-session credential carry.
+        snapshot_session_id = state.session_id;
 
         // Require vault to be unlocked and for the same vault path. The unlocking thread is
         // intentionally NOT checked: VAULT_STATE is process-global, and the desktop socket
@@ -742,9 +767,15 @@ pub fn reauth_password(password: &str) -> Result<(), KenvError> {
         }
     }
 
-    // Set reauthentication flag (requires write lock)
+    // Set reauthentication flag (requires write lock).
+    // Re-check session_id: if lock() or unlock() ran between the read-lock verify above and
+    // this write lock, session_id will have changed and we must reject to avoid stamping
+    // reauthenticated_at onto a different session than the one whose password was verified.
     {
         let mut state = VAULT_STATE.write();
+        if state.session_id != snapshot_session_id {
+            return Err(KenvError::VaultLocked);
+        }
         state.reauthenticated_at = Some(SystemTime::now());
     }
 
@@ -882,6 +913,32 @@ pub fn inject_slot_for_test(slot: slots::UnlockSlot) {
 #[doc(hidden)]
 pub fn set_last_unlock_slot_id_for_test(id: Option<u8>) {
     VAULT_STATE.write().last_unlock_slot_id = id;
+}
+
+/// Simulate a concurrent lock/unlock by advancing the session ID in VAULT_STATE without
+/// changing any other state. **Test-only helper.**
+#[doc(hidden)]
+pub fn advance_session_id_for_test() {
+    VAULT_STATE.write().session_id = NEXT_SESSION_ID.fetch_add(1, Ordering::SeqCst);
+}
+
+/// Return the current session_id from VAULT_STATE. **Test-only helper.**
+#[doc(hidden)]
+pub fn get_session_id_for_test() -> u64 {
+    VAULT_STATE.read().session_id
+}
+
+/// Execute only the write-lock stamp step of `reauth_password` with an arbitrary snapshot
+/// session ID. **Test-only helper.** Used to prove the guard rejects stale IDs without
+/// needing to race real threads.
+#[doc(hidden)]
+pub fn reauth_stamp_for_test(snapshot_session_id: u64) -> Result<(), KenvError> {
+    let mut state = VAULT_STATE.write();
+    if state.session_id != snapshot_session_id {
+        return Err(KenvError::VaultLocked);
+    }
+    state.reauthenticated_at = Some(SystemTime::now());
+    Ok(())
 }
 
 /// Inject an SSH key into the unlocked vault payload. **Test-only helper.**
