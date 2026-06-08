@@ -249,7 +249,7 @@ slot_removed=true
 
 ## Security Considerations
 
-✅ **DEK Wrapping**: Uses existing, tested `slots::password::wrap_dek()` 
+✅ **DEK Wrapping**: Uses existing, tested `slots::password::wrap_dek()`
 ✅ **Socket Permissions**: 0600 (only owner can read/write)
 ✅ **No Plaintext Storage**: No credentials stored to disk except vault file
 ✅ **Reauthentication Window**: 5-minute timeout inherited from existing design
@@ -289,7 +289,7 @@ Total: 1,156 lines of new code + tests
 
 ### Phase 2 Work (Future)
 - SSH signing implementation (ed25519, RSA, ECDSA key support)
-- CTAP2 hardware key support  
+- CTAP2 hardware key support
 - Touch ID biometric unlock on macOS
 - Session persistence improvements
 - IPC protocol versioning
