@@ -167,7 +167,7 @@ fn print_slots() -> Result<(), Box<dyn std::error::Error>> {
             for slot in slots {
                 println!("slot_id={}", slot.slot_id);
                 println!("slot_type={}", slot.slot_type);
-                println!("slot_label={}", slot.label);
+                println!("slot_label={}", escape_value(&slot.label));
             }
             Ok(())
         }
@@ -216,7 +216,7 @@ fn print_ssh_keys() -> Result<(), Box<dyn std::error::Error>> {
             println!("key_count={}", keys.len());
             for key in keys {
                 println!("key_id={}", key.key_id);
-                println!("key_name={}", key.name);
+                println!("key_name={}", escape_value(&key.name));
             }
             Ok(())
         }
@@ -230,6 +230,14 @@ fn print_ssh_keys() -> Result<(), Box<dyn std::error::Error>> {
             Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)))
         }
     }
+}
+
+/// Escape a value for script-safe key=value output.
+///
+/// Replaces `\` with `\\`, `\n` with `\n`, and `\r` with `\r` so every field
+/// occupies exactly one line regardless of the stored string's content.
+fn escape_value(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('\n', "\\n").replace('\r', "\\r")
 }
 
 fn render_status<F>(status_provider: F) -> Result<String, KenvError>
@@ -246,7 +254,7 @@ fn format_cli_error(error: &dyn std::fmt::Display) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::render_status;
+    use super::{escape_value, render_status};
     use kenv_core::{KenvError, VaultStatus};
 
     #[test]
@@ -271,5 +279,14 @@ mod tests {
     fn create_vault_outputs_locked_status() {
         let output = render_status(|| Ok(VaultStatus::Locked)).unwrap();
         assert_eq!(output, "vault_status=locked");
+    }
+
+    #[test]
+    fn escape_value_handles_newline_and_backslash() {
+        assert_eq!(escape_value("plain"), "plain");
+        assert_eq!(escape_value("line1\nline2"), "line1\\nline2");
+        assert_eq!(escape_value("a\r\nb"), "a\\r\\nb");
+        assert_eq!(escape_value("back\\slash"), "back\\\\slash");
+        assert_eq!(escape_value("mix\n\\end"), "mix\\n\\\\end");
     }
 }
