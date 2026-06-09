@@ -770,8 +770,9 @@ pub fn reauth_password(password: &str) -> Result<(), KenvError> {
                                 <[u8; 32]>::try_from(decrypted.as_slice())
                                     .map_err(|_| KenvError::UnlockFailed)?,
                             );
-                            let session_dek = state.dek.ok_or(KenvError::VaultLocked)?;
-                            if decrypted_dek.ct_eq(&session_dek).unwrap_u8() == 0 {
+                            let session_dek =
+                                zeroize::Zeroizing::new(state.dek.ok_or(KenvError::VaultLocked)?);
+                            if decrypted_dek.ct_eq(&*session_dek).unwrap_u8() == 0 {
                                 return Err(KenvError::UnlockFailed);
                             }
                         }
