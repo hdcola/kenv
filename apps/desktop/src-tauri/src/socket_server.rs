@@ -10,12 +10,14 @@ use std::sync::{
     Arc,
 };
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::Emitter;
 use zeroize::Zeroizing;
 
 const MAX_CONCURRENT_CONNECTIONS: usize = 16;
 const IO_TIMEOUT: Duration = Duration::from_secs(30);
+// Total wall-clock budget for reading one complete message; shrinks per read() call.
+const MESSAGE_DEADLINE: Duration = Duration::from_secs(30);
 
 /// RAII guard to decrement connection counter on drop, preventing leaks if handle_client panics.
 struct ConnGuard(Arc<AtomicUsize>);
@@ -93,10 +95,6 @@ fn run_socket_server(app_handle: tauri::AppHandle) -> Result<(), Box<dyn std::er
     for stream in listener.incoming() {
         match stream {
             Ok(mut socket) => {
-                if let Err(e) = socket.set_read_timeout(Some(IO_TIMEOUT)) {
-                    eprintln!("set_read_timeout failed: {}", e);
-                    continue;
-                }
                 if let Err(e) = socket.set_write_timeout(Some(IO_TIMEOUT)) {
                     eprintln!("set_write_timeout failed: {}", e);
                     continue;
@@ -149,9 +147,14 @@ fn handle_client(
 fn read_exact(
     socket: &mut std::os::unix::net::UnixStream,
     buf: &mut [u8],
+    deadline: Instant,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut offset = 0;
     while offset < buf.len() {
+        let remaining = deadline
+            .checked_duration_since(Instant::now())
+            .ok_or("message read deadline exceeded")?;
+        socket.set_read_timeout(Some(remaining))?;
         match socket.read(&mut buf[offset..])? {
             0 => return Err("unexpected EOF while reading message".into()),
             n => offset += n,
@@ -163,9 +166,10 @@ fn read_exact(
 fn read_message(
     socket: &mut std::os::unix::net::UnixStream,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    // Read exactly 4 bytes for length header
+    let deadline = Instant::now() + MESSAGE_DEADLINE;
+
     let mut len_bytes = [0u8; 4];
-    read_exact(socket, &mut len_bytes)?;
+    read_exact(socket, &mut len_bytes, deadline)?;
 
     let payload_len = u32::from_be_bytes(len_bytes) as usize;
 
@@ -174,9 +178,8 @@ fn read_message(
         return Err(format!("invalid message length: {}", payload_len).into());
     }
 
-    // Allocate and read exactly payload_len bytes
     let mut payload = vec![0u8; payload_len];
-    read_exact(socket, &mut payload)?;
+    read_exact(socket, &mut payload, deadline)?;
 
     Ok(payload)
 }
@@ -390,37 +393,25 @@ mod tests {
     }
 
     #[test]
-    fn accepted_socket_read_times_out() {
-        use std::io::Read;
+    fn read_exact_respects_message_deadline() {
         use std::os::unix::net::UnixListener;
-        use std::time::Duration;
 
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("timeout_test.sock");
+        let path = dir.path().join("deadline_test.sock");
         let listener = UnixListener::bind(&path).unwrap();
 
         let _client = std::os::unix::net::UnixStream::connect(&path).unwrap();
         let (mut server_side, _) = listener.accept().unwrap();
 
-        // Verify the production constant is wired: set it and read it back
-        server_side.set_read_timeout(Some(IO_TIMEOUT)).unwrap();
-        assert_eq!(
-            server_side.read_timeout().unwrap(),
-            Some(IO_TIMEOUT),
-            "IO_TIMEOUT must be set correctly"
-        );
-
-        // Verify timeouts actually fire (use a short duration to keep the test fast)
-        server_side
-            .set_read_timeout(Some(Duration::from_millis(100)))
-            .unwrap();
-        let start = std::time::Instant::now();
-        let mut buf = [0u8; 1];
-        let result = server_side.read(&mut buf);
-        assert!(result.is_err(), "read should error on timeout");
+        // Short deadline: even a drip-sender that sends 1 byte every N seconds is bounded.
+        let deadline = Instant::now() + Duration::from_millis(100);
+        let start = Instant::now();
+        let mut buf = [0u8; 4];
+        let result = read_exact(&mut server_side, &mut buf, deadline);
+        assert!(result.is_err(), "read_exact must fail after deadline");
         assert!(
             start.elapsed() < Duration::from_secs(2),
-            "read_timeout was not respected: elapsed {:?}",
+            "deadline was not respected: elapsed {:?}",
             start.elapsed()
         );
     }
