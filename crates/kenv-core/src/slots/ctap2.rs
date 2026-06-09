@@ -21,11 +21,14 @@ pub fn register_and_wrap_dek(
     let mut nonce = [0u8; 12];
     rand::thread_rng().fill_bytes(&mut nonce);
 
-    // For registration, derive wrapping key from hmac-secret
-    // In production, we'd get actual hmac-secret from device
-    // For now, use a mock derivation
-    let mock_hmac_secret = [1u8; 32]; // TODO: Get real hmac-secret from device
-    let wrapping_key = derive_wrapping_key(&mock_hmac_secret, &challenge)?;
+    // Obtain hmac-secret from device via initial assertion
+    let initial_assertion = ctap2::get_assertion_with_hmac_secret(
+        device,
+        &credential.credential_id,
+        &challenge,
+        0, // registration: expect counter >= 1 from hardware
+    )?;
+    let wrapping_key = derive_wrapping_key(&initial_assertion.hmac_secret, &challenge)?;
 
     // Encrypt DEK with wrapping key
     let ciphertext =
@@ -43,7 +46,7 @@ pub fn register_and_wrap_dek(
         credential_id: credential.credential_id,
         public_key: credential.public_key,
         challenge: challenge.to_vec(),
-        counter: 0,
+        counter: initial_assertion.counter,
         algorithm: -7, // ES256
         device_serial: device.serial.clone(),
         attestation_data: Some(credential.attestation_data),
@@ -141,7 +144,7 @@ mod tests {
         let dek = [99u8; 32];
 
         let slot = register_and_wrap_dek(&device, &dek, "test_label").expect("register failed");
-        assert_eq!(slot.counter, 0);
+        assert!(slot.counter > 0, "counter must be set from initial assertion");
         assert_eq!(slot.algorithm, -7); // ES256
         assert!(!slot.encrypted_dek.is_empty());
     }
@@ -167,5 +170,21 @@ mod tests {
         let key2 = derive_wrapping_key(&hmac_secret, challenge2).expect("derive2 failed");
 
         assert_ne!(key1, key2);
+    }
+
+    #[test]
+    fn round_trip_register_then_unwrap_recovers_dek() {
+        let device = ctap2::Ctap2Device {
+            device_id: "test".to_string(),
+            serial: Some("YubiKey#456".to_string()),
+        };
+        let original_dek = [77u8; 32];
+
+        let slot = register_and_wrap_dek(&device, &original_dek, "round_trip")
+            .expect("registration failed");
+
+        let recovered_dek = assert_and_unwrap_dek(&device, &slot).expect("unlock failed");
+
+        assert_eq!(original_dek, recovered_dek);
     }
 }
