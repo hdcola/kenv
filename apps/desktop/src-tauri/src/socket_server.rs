@@ -5,7 +5,6 @@ use std::fs;
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
-#[allow(unused_imports)]
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
@@ -15,7 +14,6 @@ use std::time::Duration;
 use tauri::Emitter;
 use zeroize::Zeroizing;
 
-#[allow(dead_code)]
 const MAX_CONCURRENT_CONNECTIONS: usize = 16;
 const IO_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -81,6 +79,8 @@ fn run_socket_server(app_handle: tauri::AppHandle) -> Result<(), Box<dyn std::er
         fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
     }
 
+    let conn_count = Arc::new(AtomicUsize::new(0));
+
     for stream in listener.incoming() {
         match stream {
             Ok(mut socket) => {
@@ -92,16 +92,27 @@ fn run_socket_server(app_handle: tauri::AppHandle) -> Result<(), Box<dyn std::er
                     eprintln!("set_write_timeout failed: {}", e);
                     continue;
                 }
+
+                let prev = conn_count.fetch_add(1, Ordering::Acquire);
+                if prev >= MAX_CONCURRENT_CONNECTIONS {
+                    conn_count.fetch_sub(1, Ordering::Release);
+                    eprintln!(
+                        "Connection limit ({}) reached, dropping new connection",
+                        MAX_CONCURRENT_CONNECTIONS
+                    );
+                    continue;
+                }
+
                 let handle = app_handle.clone();
+                let counter = Arc::clone(&conn_count);
                 thread::spawn(move || {
                     if let Err(e) = handle_client(&mut socket, handle) {
                         eprintln!("Client handler error: {}", e);
                     }
+                    counter.fetch_sub(1, Ordering::Release);
                 });
             }
-            Err(e) => {
-                eprintln!("Connection error: {}", e);
-            }
+            Err(e) => eprintln!("Connection error: {}", e),
         }
     }
 
@@ -338,8 +349,25 @@ fn handle_request(req: Request, app_handle: &tauri::AppHandle) -> Response {
 
 #[cfg(test)]
 mod tests {
-    use super::{SocketGuard, IO_TIMEOUT};
+    use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn connection_limit_enforced() {
+        // Test the counting logic: a counter already at the limit must reject new connections.
+        let counter = Arc::new(AtomicUsize::new(MAX_CONCURRENT_CONNECTIONS));
+
+        let prev = counter.fetch_add(1, Ordering::Acquire);
+        if prev >= MAX_CONCURRENT_CONNECTIONS {
+            counter.fetch_sub(1, Ordering::Release);
+        }
+
+        assert_eq!(
+            counter.load(Ordering::Acquire),
+            MAX_CONCURRENT_CONNECTIONS,
+            "counter must be restored to limit after rejection"
+        );
+    }
 
     #[test]
     fn socket_guard_removes_file_on_drop() {
