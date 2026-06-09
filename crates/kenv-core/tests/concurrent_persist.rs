@@ -9,7 +9,7 @@
 use kenv_core::{
     add_slot, create_vault_at,
     crypto::KdfParams,
-    list_slots, lock,
+    list_slots, lock, rename_slot,
     slots::{Ctap2SlotData, SlotType, UnlockSlot},
     unlock, vault,
 };
@@ -130,6 +130,42 @@ fn concurrent_add_slot_persists_all_changes() {
         stray_tmp.is_empty(),
         "unexpected tmp files left after concurrent persists: {:?}",
         stray_tmp.iter().map(|e| e.file_name()).collect::<Vec<_>>()
+    );
+
+    lock().ok();
+    vault::clear_test_vault_path();
+}
+
+#[test]
+#[serial]
+fn persist_uses_state_vault_path_not_global_vault_path() {
+    vault::clear_test_vault_path();
+    lock().ok();
+
+    let dir_a = TempDir::new().unwrap();
+    let path_a = dir_a.path().join("vault.kenv");
+    create_vault_at(&path_a, "password", &KdfParams::for_tests()).unwrap();
+    vault::set_test_vault_path(path_a.clone());
+    unlock("password").expect("unlock at path_a");
+
+    // Redirect the global vault path to a second directory.
+    // With the bug, persist will write to path_b and leave path_a stale.
+    // With the fix, persist uses state.vault_path = path_a regardless.
+    let dir_b = TempDir::new().unwrap();
+    let path_b = dir_b.path().join("vault.kenv");
+    vault::set_test_vault_path(path_b.clone());
+
+    rename_slot(1, "renamed".to_string()).expect("rename must succeed");
+
+    // Reload from path_a to verify the rename was persisted there.
+    vault::set_test_vault_path(path_a.clone());
+    lock().ok();
+    unlock("password").expect("re-unlock from path_a");
+    let slots = kenv_core::list_slots().expect("list_slots");
+    assert_eq!(
+        slots.iter().find(|s| s.slot_id == 1).map(|s| s.label.as_str()),
+        Some("renamed"),
+        "rename must be persisted to state.vault_path (path_a), not the redirected global path"
     );
 
     lock().ok();

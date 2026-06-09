@@ -418,7 +418,7 @@ fn persist_vault_state() -> Result<(), KenvError> {
     let ciphertext = crypto::encrypt(&dek, &nonce, &plaintext, &slot_records)
         .map_err(|_| KenvError::EncryptionError)?;
 
-    let vault_path = vault::vault_path()?;
+    let vault_path = state.vault_path.clone().ok_or(KenvError::VaultLocked)?;
     let zero_params = KdfParams {
         m_cost: 0,
         t_cost: 0,
