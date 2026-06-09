@@ -139,12 +139,10 @@ fn returns_locked_when_header_valid_and_ciphertext_is_garbage() {
 
     let mut data = vec![0u8; 91];
     data[0..4].copy_from_slice(b"KENV");
-    data[4] = 1; // version
+    data[4] = 2; // version = V2
     data[5] = 1; // kdf_id
-    data[6..10].copy_from_slice(&1u32.to_be_bytes()); // m_cost = 1
-    data[10..14].copy_from_slice(&1u32.to_be_bytes()); // t_cost = 1
-    data[14..18].copy_from_slice(&1u32.to_be_bytes()); // p_cost = 1
-                                                       // salt at bytes 18..50 has valid data
+                 // bytes 6..18: KDF params are zero in V2 (per-slot)
+                 // salt at bytes 18..50 has valid data
     for i in 18..50 {
         data[i] = ((i as u32).wrapping_mul(0x9e3779b9)) as u8;
     }
@@ -152,7 +150,7 @@ fn returns_locked_when_header_valid_and_ciphertext_is_garbage() {
     for i in 50..62 {
         data[i] = ((i as u32).wrapping_mul(0x9e3779b9)) as u8;
     }
-    // ciphertext at bytes 62..91 is garbage (all zeros or bitflipped)
+    // slot section + ciphertext at bytes 62..91 is garbage (all zeros)
     std::fs::write(&path, &data).unwrap();
 
     let status = get_vault_status_with(|| {

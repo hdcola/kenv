@@ -105,7 +105,7 @@ impl UnlockSlot {
     pub fn has_key_material(&self) -> bool {
         match self.slot_type {
             SlotType::Password => self.password.is_some(),
-            SlotType::Ctap2   => self.ctap2.is_some(),
+            SlotType::Ctap2 => self.ctap2.is_some(),
             SlotType::TouchId => self.touchid.is_some(),
         }
     }

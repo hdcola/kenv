@@ -23,8 +23,8 @@ pub fn wrap_dek(dek: &[u8; 32], label: &str) -> Result<TouchIdSlotData, KenvErro
     let mock_wrapping_key = [1u8; 32]; // Temporary: replace with SE-derived key
 
     // Encrypt DEK with the wrapping key
-    let ciphertext =
-        crypto::encrypt(&mock_wrapping_key, &nonce, dek).map_err(|_| KenvError::EncryptionError)?;
+    let ciphertext = crypto::encrypt(&mock_wrapping_key, &nonce, dek, &[])
+        .map_err(|_| KenvError::EncryptionError)?;
 
     // Extract GCM tag
     if ciphertext.len() < 16 {
@@ -77,7 +77,7 @@ pub fn unwrap_dek(slot: &TouchIdSlotData) -> Result<[u8; 32], KenvError> {
         ciphertext.extend_from_slice(&slot.encrypted_dek);
         ciphertext.extend_from_slice(&slot.tag);
 
-        let plaintext = crypto::decrypt(&mock_wrapping_key, &slot.nonce, &ciphertext)
+        let plaintext = crypto::decrypt(&mock_wrapping_key, &slot.nonce, &ciphertext, &[])
             .map_err(|_| KenvError::UnlockFailed)?;
 
         if plaintext.len() != 32 {

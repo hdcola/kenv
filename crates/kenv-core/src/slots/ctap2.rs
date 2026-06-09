@@ -29,7 +29,7 @@ pub fn register_and_wrap_dek(
 
     // Encrypt DEK with wrapping key
     let ciphertext =
-        crypto::encrypt(&wrapping_key, &nonce, dek).map_err(|_| KenvError::EncryptionError)?;
+        crypto::encrypt(&wrapping_key, &nonce, dek, &[]).map_err(|_| KenvError::EncryptionError)?;
 
     // Extract GCM tag
     if ciphertext.len() < 16 {
@@ -89,7 +89,7 @@ pub fn assert_and_unwrap_dek(
     ciphertext.extend_from_slice(&slot.encrypted_dek);
     ciphertext.extend_from_slice(&slot.tag);
 
-    let plaintext = crypto::decrypt(&wrapping_key, &slot.nonce, &ciphertext)
+    let plaintext = crypto::decrypt(&wrapping_key, &slot.nonce, &ciphertext, &[])
         .map_err(|_| KenvError::UnlockFailed)?;
 
     if plaintext.len() != 32 {

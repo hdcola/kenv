@@ -11,20 +11,15 @@ use zeroize::Zeroize;
 use std::os::unix::fs::OpenOptionsExt;
 
 pub const MAGIC: &[u8; 4] = b"KENV";
-pub const FILE_VERSION_V1: u8 = 1;
 pub const FILE_VERSION_V2: u8 = 2;
 
-// V1 format constants
 pub const KDF_ID_ARGON2ID: u8 = 1;
 pub const SALT_OFFSET: usize = 18;
 pub const SALT_SIZE: usize = 32;
 pub const NONCE_OFFSET: usize = 50;
 pub const NONCE_SIZE: usize = 12;
-pub const CIPHERTEXT_OFFSET: usize = 62;
 pub const MIN_FILE_SIZE: usize = 91;
 
-// V2 format header constants
-pub const V2_HEADER_SIZE: usize = 62; // Same header as V1, followed by slots
 pub const V2_SLOTS_OFFSET: usize = 62;
 
 /// Key data parsed from a V2 cleartext slot record.
@@ -427,38 +422,25 @@ pub fn vault_path() -> Result<std::path::PathBuf, KenvError> {
     Ok(home.join(".kenv").join("vault.kenv"))
 }
 
-/// Serialize the vault header + optional cleartext slot records + ciphertext into the on-disk
-/// byte layout.
-///
-/// `slot_records` is the pre-encoded cleartext slot section (from
-/// `build_cleartext_slot_records`) for V2, or empty for V1. For V2, the KDF params
-/// in the 62-byte fixed header are zeroed — the real per-slot KDF params live in
-/// `slot_records`.
+/// Serialize the V2 vault header + cleartext slot records + ciphertext into the on-disk
+/// byte layout. KDF params in the 62-byte fixed header are always zeroed; the real
+/// per-slot KDF params live in `slot_records`.
 fn encode_vault_bytes(
     salt: &[u8; 32],
     nonce: &[u8; 12],
     ciphertext: &[u8],
-    params: &KdfParams,
-    version: u8,
+    _params: &KdfParams,
+    _version: u8,
     slot_records: &[u8],
 ) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(CIPHERTEXT_OFFSET + slot_records.len() + ciphertext.len());
+    let mut buf = Vec::with_capacity(V2_SLOTS_OFFSET + slot_records.len() + ciphertext.len());
     buf.extend_from_slice(MAGIC);
-    buf.push(version);
+    buf.push(FILE_VERSION_V2);
     buf.push(KDF_ID_ARGON2ID);
-    if version == FILE_VERSION_V2 {
-        // KDF params are per-slot in V2; write zeros in the shared header.
-        buf.extend_from_slice(&[0u8; 12]);
-    } else {
-        buf.extend_from_slice(&params.m_cost.to_be_bytes());
-        buf.extend_from_slice(&params.t_cost.to_be_bytes());
-        buf.extend_from_slice(&params.p_cost.to_be_bytes());
-    }
+    buf.extend_from_slice(&[0u8; 12]); // KDF params are per-slot in V2
     buf.extend_from_slice(salt);
     buf.extend_from_slice(nonce);
-    if version == FILE_VERSION_V2 {
-        buf.extend_from_slice(slot_records);
-    }
+    buf.extend_from_slice(slot_records);
     buf.extend_from_slice(ciphertext);
     buf
 }
@@ -594,33 +576,11 @@ pub fn validate_vault_header(data: &[u8]) -> Result<u8, KenvError> {
     }
 
     let version = data[4];
-    if version != FILE_VERSION_V1 && version != FILE_VERSION_V2 {
+    if version != FILE_VERSION_V2 {
         return Err(KenvError::InvalidVaultFormat);
     }
 
     if data[5] != KDF_ID_ARGON2ID {
-        return Err(KenvError::InvalidVaultFormat);
-    }
-
-    let m_cost = u32::from_be_bytes(
-        data[6..10]
-            .try_into()
-            .map_err(|_| KenvError::InvalidVaultFormat)?,
-    );
-    let t_cost = u32::from_be_bytes(
-        data[10..14]
-            .try_into()
-            .map_err(|_| KenvError::InvalidVaultFormat)?,
-    );
-    let p_cost = u32::from_be_bytes(
-        data[14..18]
-            .try_into()
-            .map_err(|_| KenvError::InvalidVaultFormat)?,
-    );
-
-    // V2 stores KDF params per-slot in the cleartext slot section, so the shared header
-    // fields are intentionally zero. Only enforce non-zero for V1.
-    if version == FILE_VERSION_V1 && (m_cost == 0 || t_cost == 0 || p_cost == 0) {
         return Err(KenvError::InvalidVaultFormat);
     }
 

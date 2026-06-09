@@ -1,5 +1,5 @@
 use kenv_core::crypto::KdfParams;
-use kenv_core::vault::{validate_vault_header, CIPHERTEXT_OFFSET, MIN_FILE_SIZE};
+use kenv_core::vault::{validate_vault_header, MIN_FILE_SIZE, V2_SLOTS_OFFSET};
 use kenv_core::{create_vault_at, KenvError};
 use tempfile::TempDir;
 
@@ -55,7 +55,7 @@ fn ciphertext_does_not_contain_plaintext_json_keys() {
     let path = dir.path().join("vault.kenv");
     create_vault_at(&path, "secret", &p()).unwrap();
     let bytes = std::fs::read(&path).unwrap();
-    let ciphertext = &bytes[CIPHERTEXT_OFFSET..];
+    let ciphertext = &bytes[V2_SLOTS_OFFSET..];
     assert!(!ciphertext.windows(7).any(|w| w == b"version"));
 }
 

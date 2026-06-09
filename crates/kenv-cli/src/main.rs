@@ -237,7 +237,9 @@ fn print_ssh_keys() -> Result<(), Box<dyn std::error::Error>> {
 /// Replaces `\` with `\\`, `\n` with `\n`, and `\r` with `\r` so every field
 /// occupies exactly one line regardless of the stored string's content.
 fn escape_value(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('\n', "\\n").replace('\r', "\\r")
+    s.replace('\\', "\\\\")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
 }
 
 fn render_status<F>(status_provider: F) -> Result<String, KenvError>

@@ -19,7 +19,7 @@ pub fn encrypt_payload(dek: &[u8; 32], plaintext: &[u8]) -> Result<EncryptedPayl
     rand::thread_rng().fill_bytes(&mut nonce);
 
     let ciphertext =
-        crypto::encrypt(dek, &nonce, plaintext).map_err(|_| KenvError::EncryptionError)?;
+        crypto::encrypt(dek, &nonce, plaintext, &[]).map_err(|_| KenvError::EncryptionError)?;
 
     // Extract GCM tag (last 16 bytes)
     if ciphertext.len() < 16 {
@@ -44,7 +44,7 @@ pub fn decrypt_payload(dek: &[u8; 32], encrypted: &EncryptedPayload) -> Result<V
     ciphertext.extend_from_slice(&encrypted.ciphertext);
     ciphertext.extend_from_slice(&encrypted.tag);
 
-    crypto::decrypt(dek, &encrypted.nonce, &ciphertext).map_err(|_| KenvError::EncryptionError)
+    crypto::decrypt(dek, &encrypted.nonce, &ciphertext, &[]).map_err(|_| KenvError::EncryptionError)
 }
 
 /// Encrypted vault payload

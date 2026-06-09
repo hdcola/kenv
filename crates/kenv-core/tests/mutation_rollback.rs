@@ -79,7 +79,10 @@ fn add_slot_rollback_on_persist_failure() {
 
     arm_fail_next_persist_for_test();
     let result = add_slot(ctap2_slot(10));
-    assert!(result.is_err(), "add_slot must return Err when persist fails");
+    assert!(
+        result.is_err(),
+        "add_slot must return Err when persist fails"
+    );
 
     let slots = list_slots().expect("list_slots");
     assert!(
@@ -105,7 +108,10 @@ fn rename_slot_rollback_on_persist_failure() {
 
     arm_fail_next_persist_for_test();
     let result = rename_slot(1, "renamed".to_string());
-    assert!(result.is_err(), "rename_slot must return Err when persist fails");
+    assert!(
+        result.is_err(),
+        "rename_slot must return Err when persist fails"
+    );
 
     let slots = list_slots().expect("list_slots");
     let label = slots.iter().find(|s| s.slot_id == 1).unwrap().label.clone();
@@ -128,7 +134,10 @@ fn remove_slot_rollback_on_persist_failure() {
 
     arm_fail_next_persist_for_test();
     let result = remove_slot(2);
-    assert!(result.is_err(), "remove_slot must return Err when persist fails");
+    assert!(
+        result.is_err(),
+        "remove_slot must return Err when persist fails"
+    );
 
     let slots = list_slots().expect("list_slots");
     assert!(

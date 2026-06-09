@@ -1,6 +1,7 @@
 use kenv_core::{
     add_password_slot, add_slot, list_slots, remove_slot, rename_slot,
     slots::{Ctap2SlotData, SlotType, UnlockSlot},
+    vault,
 };
 use serial_test::serial;
 use std::time::SystemTime;
@@ -583,6 +584,74 @@ fn add_slot_rejects_touchid_slot_without_touchid_data() {
 
     let err = add_slot(bare_slot(12, SlotType::TouchId)).unwrap_err();
     assert!(matches!(err, KenvError::InvalidSlotData), "got {err}");
+
+    lock().ok();
+    vault::clear_test_vault_path();
+}
+
+// --- Security: removed slot cannot be spliced back to bypass revocation ---
+
+/// Build a vault with two password slots, remove one, then splice the old slot section
+/// (which still contains the removed slot) onto the current ciphertext. The AEAD tag
+/// was computed with the new slot section as AAD, so the splice must fail decryption.
+#[test]
+#[serial]
+fn removed_slot_cannot_be_spliced_back() {
+    use kenv_core::{create_vault_at, crypto::KdfParams, lock, unlock};
+    use tempfile::TempDir;
+
+    vault::clear_test_vault_path();
+    lock().ok();
+
+    let dir = TempDir::new().unwrap();
+    let vault_path = dir.path().join("vault.kenv");
+    let pass1 = "primary_password";
+    let pass2 = "secondary_password";
+
+    // Create vault with pass1 (slot 1).
+    create_vault_at(&vault_path, pass1, &KdfParams::for_tests()).unwrap();
+    vault::set_test_vault_path(vault_path.clone());
+    unlock(pass1).unwrap();
+
+    // Add a second password slot protected by pass2.
+    add_password_slot(pass2, &KdfParams::for_tests()).unwrap();
+
+    // Capture the vault file bytes while both slots are present.
+    let old_bytes = std::fs::read(&vault_path).unwrap();
+
+    // Find where the slot section ends (= ciphertext start) in the old file.
+    let (_, old_cipher_start) = kenv_core::vault::parse_cleartext_slot_records(&old_bytes).unwrap();
+    let old_slot_section = &old_bytes[vault::V2_SLOTS_OFFSET..old_cipher_start];
+
+    // Remove slot 2. The vault is now re-encrypted with only slot 1 in the AAD.
+    kenv_core::reauth_password(pass1).unwrap();
+    remove_slot(2).unwrap();
+
+    // Read the updated vault (slot 2 gone, new ciphertext with new AAD).
+    let new_bytes = std::fs::read(&vault_path).unwrap();
+    let (_, new_cipher_start) = kenv_core::vault::parse_cleartext_slot_records(&new_bytes).unwrap();
+
+    // Splice: new header (with current nonce) + OLD slot section + new ciphertext.
+    let mut spliced = Vec::new();
+    spliced.extend_from_slice(&new_bytes[..vault::V2_SLOTS_OFFSET]); // header with current nonce
+    spliced.extend_from_slice(old_slot_section); // old section still contains slot 2
+    spliced.extend_from_slice(&new_bytes[new_cipher_start..]); // ciphertext encrypted with new AAD
+    std::fs::write(&vault_path, &spliced).unwrap();
+
+    // Unlock with pass2 (slot 2's password) must fail: AAD mismatch detected by AEAD.
+    lock().ok();
+    let result = unlock(pass2);
+    assert!(
+        result.is_err(),
+        "splice attack must not succeed: old slot section + new ciphertext must fail AEAD"
+    );
+
+    // Also verify that pass1 cannot unlock (the spliced file is effectively corrupt).
+    let result2 = unlock(pass1);
+    assert!(
+        result2.is_err(),
+        "spliced file must not be unlockable at all"
+    );
 
     lock().ok();
     vault::clear_test_vault_path();

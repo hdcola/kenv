@@ -5,9 +5,7 @@
 //! kdf_params/vault_path were overwritten; reauthenticated_at survived.
 
 use kenv_core::{
-    add_password_slot, create_vault_at,
-    crypto::KdfParams,
-    lock, reauth_password, remove_slot,
+    add_password_slot, create_vault_at, crypto::KdfParams, lock, reauth_password, remove_slot,
     unlock, vault, KenvError,
 };
 use serial_test::serial;
