@@ -458,8 +458,8 @@ fn sync_parent_dir(path: &Path) -> std::io::Result<()> {
 ///
 /// Use [`overwrite_vault_file`] to persist changes to an existing vault.
 ///
-/// `slot_records` is the pre-encoded cleartext slot section for V2 (from
-/// `build_cleartext_slot_records`), or empty for V1.
+/// `slot_records` is the pre-encoded cleartext slot section (from
+/// `build_cleartext_slot_records`).
 pub fn write_vault_file(
     path: &Path,
     salt: &[u8; 32],
@@ -510,8 +510,8 @@ pub fn write_vault_file(
 /// Writes to a sibling temp file (mode 0600), fsyncs it, then renames it over `path`. A crash
 /// at any point leaves either the old vault or the new one intact — never a truncated file.
 ///
-/// `slot_records` is the pre-encoded cleartext slot section for V2 (from
-/// `build_cleartext_slot_records`), or empty for V1.
+/// `slot_records` is the pre-encoded cleartext slot section (from
+/// `build_cleartext_slot_records`).
 pub fn overwrite_vault_file(
     path: &Path,
     salt: &[u8; 32],
