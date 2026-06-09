@@ -11,6 +11,7 @@ use zeroize::Zeroize;
 use std::os::unix::fs::OpenOptionsExt;
 
 pub const MAGIC: &[u8; 4] = b"KENV";
+pub const FILE_VERSION_V1: u8 = 1;
 pub const FILE_VERSION_V2: u8 = 2;
 
 pub const KDF_ID_ARGON2ID: u8 = 1;
@@ -392,20 +393,19 @@ impl Zeroize for VaultPayload {
     }
 }
 
-// Thread-local storage for test vault path overrides
-// Each test thread gets its own isolated path, preventing interference in concurrent test execution
+#[cfg(any(test, feature = "test-utils"))]
 thread_local! {
     static TEST_VAULT_PATH: std::sync::Mutex<Option<std::path::PathBuf>> = std::sync::Mutex::new(None);
 }
 
-/// Set vault path for testing (truly isolated to calling thread)
+#[cfg(any(test, feature = "test-utils"))]
 pub fn set_test_vault_path(path: std::path::PathBuf) {
     TEST_VAULT_PATH.with(|p| {
         *p.lock().unwrap() = Some(path);
     });
 }
 
-/// Clear vault path for testing
+#[cfg(any(test, feature = "test-utils"))]
 pub fn clear_test_vault_path() {
     TEST_VAULT_PATH.with(|p| {
         *p.lock().unwrap() = None;
@@ -413,7 +413,7 @@ pub fn clear_test_vault_path() {
 }
 
 pub fn vault_path() -> Result<std::path::PathBuf, KenvError> {
-    // Check for test-injected path first (each thread has its own isolated thread-local value)
+    #[cfg(any(test, feature = "test-utils"))]
     if let Some(path) = TEST_VAULT_PATH.with(|p| p.lock().unwrap().clone()) {
         return Ok(path);
     }
@@ -576,6 +576,9 @@ pub fn validate_vault_header(data: &[u8]) -> Result<u8, KenvError> {
     }
 
     let version = data[4];
+    if version == FILE_VERSION_V1 {
+        return Err(KenvError::VaultVersionUnsupported(FILE_VERSION_V1));
+    }
     if version != FILE_VERSION_V2 {
         return Err(KenvError::InvalidVaultFormat);
     }

@@ -18,6 +18,37 @@ sha2.workspace = true
 subtle.workspace = true
 zeroize.workspace = true
 
+[features]
+test-utils = []
+
 [dev-dependencies]
 tempfile = "3"
 serial_test.workspace = true
+
+[[test]]
+name = "concurrent_persist"
+required-features = ["test-utils"]
+
+[[test]]
+name = "mutation_rollback"
+required-features = ["test-utils"]
+
+[[test]]
+name = "reauth_session_guard"
+required-features = ["test-utils"]
+
+[[test]]
+name = "slot_management"
+required-features = ["test-utils"]
+
+[[test]]
+name = "ssh_operations"
+required-features = ["test-utils"]
+
+[[test]]
+name = "unlock_resets_reauth"
+required-features = ["test-utils"]
+
+[[test]]
+name = "unlock_wrong_password"
+required-features = ["test-utils"]

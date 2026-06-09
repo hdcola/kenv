@@ -398,7 +398,12 @@ mod tests {
 
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("deadline_test.sock");
-        let listener = UnixListener::bind(&path).unwrap();
+        // Some sandboxed environments deny Unix socket creation; skip rather than fail.
+        let listener = match UnixListener::bind(&path) {
+            Ok(l) => l,
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => return,
+            Err(e) => panic!("unexpected socket bind error: {e}"),
+        };
 
         let _client = std::os::unix::net::UnixStream::connect(&path).unwrap();
         let (mut server_side, _) = listener.accept().unwrap();

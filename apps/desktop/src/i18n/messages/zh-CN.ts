@@ -22,7 +22,10 @@ export const zhCN = {
     unlocked: "已解锁",
     unknown: "未知",
     corrupted: "已损坏",
+    needs_recreation: "需要重建",
     locked_description: "已加密，完整性将在解锁时验证。",
+    needs_recreation_description:
+      "您的保险库使用的是不再受支持的旧格式。请备份已存储的凭据，然后运行：kenv create",
     copy: "共享的 Rust 核心已经接通。保险库创建现已可用，解锁与凭证工作流是接下来的 MVP 重点。",
   },
   panels: {

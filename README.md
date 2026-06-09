@@ -159,7 +159,8 @@ Install dependencies and run the current verification suite:
 
 ```sh
 pnpm install
-cargo test --workspace
+cargo test --workspace                                         # fast check; skips feature-gated integration tests
+cargo test --workspace --features kenv-core/test-utils        # full suite including fault-injection tests
 ```
 
 Current platform support:

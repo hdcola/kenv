@@ -22,6 +22,7 @@ pub enum VaultStatus {
     Locked,
     Unlocked,
     Corrupted,
+    NeedsRecreation,
 }
 
 impl VaultStatus {
@@ -31,6 +32,7 @@ impl VaultStatus {
             Self::Locked => "locked",
             Self::Unlocked => "unlocked",
             Self::Corrupted => "corrupted",
+            Self::NeedsRecreation => "needs_recreation",
         }
     }
 }
@@ -140,6 +142,8 @@ pub enum KenvError {
     VaultAlreadyExists,
     #[error("vault file has an invalid format")]
     InvalidVaultFormat,
+    #[error("vault format version {0} is no longer supported; recreate the vault")]
+    VaultVersionUnsupported(u8),
     #[error("encryption or decryption failed")]
     EncryptionError,
     #[error("password must not be empty")]
@@ -395,6 +399,7 @@ pub fn lock() -> Result<(), KenvError> {
 }
 
 fn persist_vault_state() -> Result<(), KenvError> {
+    #[cfg(any(test, feature = "test-utils"))]
     if FAIL_NEXT_PERSIST.swap(false, std::sync::atomic::Ordering::SeqCst) {
         return Err(KenvError::FileOperationFailed);
     }
@@ -455,6 +460,7 @@ pub fn get_vault_status() -> Result<VaultStatus, KenvError> {
         // without the decryption key; that check belongs in unlock(). A vault with
         // corrupted ciphertext will return Locked here and only fail at unlock time.
         Ok(_version) => Ok(VaultStatus::Locked),
+        Err(KenvError::VaultVersionUnsupported(_)) => Ok(VaultStatus::NeedsRecreation),
         Err(_) => Ok(VaultStatus::Corrupted),
     }
 }
@@ -921,44 +927,29 @@ pub fn sign_ssh_key(key_id: &str, data_to_sign: &[u8]) -> Result<ssh::SshSignatu
     }
 }
 
-/// Inject an unlock slot into the unlocked vault payload. **Test-only helper.**
-///
-/// Requires the vault to already be unlocked (payload present). Used by integration tests
-/// to exercise remove-slot guards for non-password slot types without needing real CTAP2/TouchID
-/// hardware. Plain `pub` (not `#[cfg(test)]`) so integration test binaries can reach it.
-#[doc(hidden)]
+#[cfg(any(test, feature = "test-utils"))]
 pub fn inject_slot_for_test(slot: slots::UnlockSlot) {
     if let Some(ref mut payload) = VAULT_STATE.write().payload {
         payload.slots.push(slot);
     }
 }
 
-/// Override `last_unlock_slot_id` in the global vault state. **Test-only helper.**
-///
-/// Used by integration tests to simulate a non-password slot being the active unlock slot.
-/// Plain `pub` (not `#[cfg(test)]`) so integration test binaries can reach it.
-#[doc(hidden)]
+#[cfg(any(test, feature = "test-utils"))]
 pub fn set_last_unlock_slot_id_for_test(id: Option<u8>) {
     VAULT_STATE.write().last_unlock_slot_id = id;
 }
 
-/// Simulate a concurrent lock/unlock by advancing the session ID in VAULT_STATE without
-/// changing any other state. **Test-only helper.**
-#[doc(hidden)]
+#[cfg(any(test, feature = "test-utils"))]
 pub fn advance_session_id_for_test() {
     VAULT_STATE.write().session_id = NEXT_SESSION_ID.fetch_add(1, Ordering::SeqCst);
 }
 
-/// Return the current session_id from VAULT_STATE. **Test-only helper.**
-#[doc(hidden)]
+#[cfg(any(test, feature = "test-utils"))]
 pub fn get_session_id_for_test() -> u64 {
     VAULT_STATE.read().session_id
 }
 
-/// Execute only the write-lock stamp step of `reauth_password` with an arbitrary snapshot
-/// session ID. **Test-only helper.** Used to prove the guard rejects stale IDs without
-/// needing to race real threads.
-#[doc(hidden)]
+#[cfg(any(test, feature = "test-utils"))]
 pub fn reauth_stamp_for_test(snapshot_session_id: u64) -> Result<(), KenvError> {
     let mut state = VAULT_STATE.write();
     if state.session_id != snapshot_session_id {
@@ -968,23 +959,12 @@ pub fn reauth_stamp_for_test(snapshot_session_id: u64) -> Result<(), KenvError> 
     Ok(())
 }
 
-/// Overwrite the active session DEK with an arbitrary value. **Test-only helper.**
-///
-/// Used to simulate an inconsistency between `state.dek` and the value wrapped inside
-/// a password slot, without needing to craft a valid mismatched AEAD ciphertext.
-#[doc(hidden)]
+#[cfg(any(test, feature = "test-utils"))]
 pub fn corrupt_dek_for_test(new_dek: [u8; 32]) {
     VAULT_STATE.write().dek = Some(new_dek);
 }
 
-/// Inject an SSH key into the unlocked vault payload. **Test-only helper.**
-///
-/// Requires the vault to already be unlocked (payload present). Used by integration tests
-/// to exercise the sign path before a public add_ssh_key API exists. Mirrors the
-/// `vault::set_test_vault_path` pattern: plain `pub` so integration test binaries can
-/// reach it (integration tests link the lib in non-test mode, so `#[cfg(test)]` is not
-/// compiled into the integration test binary).
-#[doc(hidden)]
+#[cfg(any(test, feature = "test-utils"))]
 pub fn test_insert_ssh_key(key: ssh::SshKey) {
     VAULT_STATE
         .write()
@@ -993,15 +973,10 @@ pub fn test_insert_ssh_key(key: ssh::SshKey) {
         .map(|p| p.ssh_keys.push(key));
 }
 
+#[cfg(any(test, feature = "test-utils"))]
 static FAIL_NEXT_PERSIST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Arms a single-shot persist failure. The next call to `persist_vault_state`
-/// returns `FileOperationFailed` and clears the flag automatically.
-///
-/// Plain `pub` (not `#[cfg(test)]`) so integration test binaries can reach it
-/// (integration tests link the lib in non-test mode, so `#[cfg(test)]` is not
-/// compiled into the integration test binary).
-#[doc(hidden)]
+#[cfg(any(test, feature = "test-utils"))]
 pub fn arm_fail_next_persist_for_test() {
     FAIL_NEXT_PERSIST.store(true, std::sync::atomic::Ordering::SeqCst);
 }

@@ -6,7 +6,7 @@ import { useI18n } from "vue-i18n";
 import { persistLocale, SUPPORTED_LOCALES, type SupportedLocale } from "./i18n";
 import VaultCreateForm from "./VaultCreateForm.vue";
 
-type VaultStatus = "missing" | "locked" | "unlocked" | "corrupted";
+type VaultStatus = "missing" | "locked" | "unlocked" | "corrupted" | "needs_recreation";
 type VaultStatusView = VaultStatus | "unknown";
 
 const vaultStatus = ref<VaultStatusView>("unknown");
@@ -24,6 +24,9 @@ const statusDescription = computed(() => {
   if (vaultStatus.value === "locked") {
     return t("status.locked_description");
   }
+  if (vaultStatus.value === "needs_recreation") {
+    return t("status.needs_recreation_description");
+  }
   return t("status.copy");
 });
 
@@ -38,6 +41,7 @@ async function refreshVaultStatus() {
   try {
     vaultStatus.value = await invoke<VaultStatus>("get_vault_status");
   } catch (error) {
+    vaultStatus.value = "unknown";
     rawStatusError.value = error instanceof Error ? error.message : String(error);
   }
 }
@@ -358,6 +362,11 @@ onUnmounted(() => {
 .status-pill--corrupted {
   color: #b85c0f;
   background: #fed7a8;
+}
+
+.status-pill--needs_recreation {
+  color: #7c5b0a;
+  background: #fef9c3;
 }
 
 .error-text {
