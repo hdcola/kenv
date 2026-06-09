@@ -17,6 +17,15 @@ use zeroize::Zeroizing;
 const MAX_CONCURRENT_CONNECTIONS: usize = 16;
 const IO_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// RAII guard to decrement connection counter on drop, preventing leaks if handle_client panics.
+struct ConnGuard(Arc<AtomicUsize>);
+
+impl Drop for ConnGuard {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Release);
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct Request {
     method: String,
@@ -106,10 +115,10 @@ fn run_socket_server(app_handle: tauri::AppHandle) -> Result<(), Box<dyn std::er
                 let handle = app_handle.clone();
                 let counter = Arc::clone(&conn_count);
                 thread::spawn(move || {
+                    let _guard = ConnGuard(counter);
                     if let Err(e) = handle_client(&mut socket, handle) {
                         eprintln!("Client handler error: {}", e);
                     }
-                    counter.fetch_sub(1, Ordering::Release);
                 });
             }
             Err(e) => eprintln!("Connection error: {}", e),
@@ -363,7 +372,7 @@ mod tests {
         }
 
         assert_eq!(
-            counter.load(Ordering::Acquire),
+            counter.load(Ordering::Relaxed),
             MAX_CONCURRENT_CONNECTIONS,
             "counter must be restored to limit after rejection"
         );
