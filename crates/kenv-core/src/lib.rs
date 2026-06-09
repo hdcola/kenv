@@ -105,7 +105,7 @@ static VAULT_STATE: RwLock<VaultState> = RwLock::new(VaultState {
 static PERSIST_MUTEX: Mutex<()> = Mutex::new(());
 
 /// Serialises the full modify→persist→rollback transaction for slot mutations.
-/// Held for the entire lifetime of `add_slot`, `remove_slot`, and `rename_slot`.
+/// Held for the entire lifetime of `add_slot`, `add_password_slot`, `remove_slot`, and `rename_slot`.
 /// This ensures that if a persist fails and rolls back in-memory state, no concurrent
 /// mutation has modified `VAULT_STATE` between Phase 1 (write lock) and the rollback
 /// write lock — which would otherwise cause the rollback to silently destroy the
@@ -500,6 +500,8 @@ fn add_slot_inner(slot: slots::UnlockSlot) -> Result<(), KenvError> {
             return Err(KenvError::VaultLocked);
         }
     }
+    // Drop write lock before persisting. Roll back the in-memory change on failure so the
+    // process state cannot permanently diverge from what is on disk.
     if let Err(e) = persist_vault_state() {
         let mut state = VAULT_STATE.write();
         if let Some(ref mut payload) = state.payload {
