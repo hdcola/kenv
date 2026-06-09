@@ -5,9 +5,19 @@ use std::fs;
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
+#[allow(unused_imports)]
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
 use std::thread;
+use std::time::Duration;
 use tauri::Emitter;
 use zeroize::Zeroizing;
+
+#[allow(dead_code)]
+const MAX_CONCURRENT_CONNECTIONS: usize = 16;
+const IO_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Request {
@@ -74,6 +84,14 @@ fn run_socket_server(app_handle: tauri::AppHandle) -> Result<(), Box<dyn std::er
     for stream in listener.incoming() {
         match stream {
             Ok(mut socket) => {
+                if let Err(e) = socket.set_read_timeout(Some(IO_TIMEOUT)) {
+                    eprintln!("set_read_timeout failed: {}", e);
+                    continue;
+                }
+                if let Err(e) = socket.set_write_timeout(Some(IO_TIMEOUT)) {
+                    eprintln!("set_write_timeout failed: {}", e);
+                    continue;
+                }
                 let handle = app_handle.clone();
                 thread::spawn(move || {
                     if let Err(e) = handle_client(&mut socket, handle) {
@@ -332,5 +350,35 @@ mod tests {
         let guard = SocketGuard(path.clone());
         drop(guard);
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn accepted_socket_read_times_out() {
+        use std::io::Read;
+        use std::os::unix::net::{UnixListener, UnixStream};
+        use std::time::Duration;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("timeout_test.sock");
+        let listener = UnixListener::bind(&path).unwrap();
+
+        // Connect a client that never writes
+        let _client = UnixStream::connect(&path).unwrap();
+        let (server_side, _) = listener.accept().unwrap();
+
+        // Use a short timeout for test speed; verify the API works
+        let test_timeout = Duration::from_millis(100);
+        server_side.set_read_timeout(Some(test_timeout)).unwrap();
+
+        let start = std::time::Instant::now();
+        let mut buf = [0u8; 1];
+        let mut server_ref = &server_side;
+        let result = server_ref.read(&mut buf);
+        assert!(result.is_err(), "read should time out");
+        assert!(
+            start.elapsed() < Duration::from_secs(2),
+            "read_timeout was not respected: elapsed {:?}",
+            start.elapsed()
+        );
     }
 }
