@@ -91,7 +91,7 @@ pub fn get_assertion_with_hmac_secret(
         hmac_secret[0] = 42; // Mock value
         Ok(Ctap2Assertion {
             signature: b"mock_signature".to_vec(),
-            counter: 2,
+            counter: _expected_counter + 1,
             hmac_secret,
         })
     }
@@ -139,5 +139,29 @@ mod tests {
             .expect("assertion failed");
         assert_eq!(assertion.hmac_secret.len(), 32);
         assert!(assertion.counter > 1); // Counter incremented
+    }
+
+    #[test]
+    fn assertion_counter_always_exceeds_expected() {
+        let device = Ctap2Device {
+            device_id: "test".to_string(),
+            serial: None,
+        };
+        let cred = b"cred_id".to_vec();
+        let challenge = [3u8; 32];
+
+        // With expected_counter = 0 (registration time)
+        let a0 = get_assertion_with_hmac_secret(&device, &cred, &challenge, 0).unwrap();
+        assert!(a0.counter > 0, "counter must exceed expected=0");
+
+        // With expected_counter = a0.counter (unlock time — simulates second call after
+        // register)
+        let a1 = get_assertion_with_hmac_secret(&device, &cred, &challenge, a0.counter)
+            .unwrap();
+        assert!(
+            a1.counter > a0.counter,
+            "counter must exceed expected={}",
+            a0.counter
+        );
     }
 }
