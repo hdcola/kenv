@@ -46,12 +46,14 @@ static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
 #[derive(Clone)]
 struct VaultState {
     payload: Option<vault::VaultPayload>,
+    #[allow(dead_code)]
     unlocked_at: Option<SystemTime>,
     last_unlock_slot_id: Option<u8>,
     dek: Option<[u8; 32]>,
     reauthenticated_at: Option<SystemTime>,
     salt: Option<[u8; 32]>,
     vault_path: Option<std::path::PathBuf>,
+    #[allow(dead_code)]
     file_version: Option<u8>,
     /// Generation counter snapshotted from `NEXT_SESSION_ID` when this session was opened.
     /// 0 means "locked / no session".  Used by `reauth_password` to detect a session change
@@ -550,8 +552,7 @@ fn reauth_window_valid(reauth_time: Option<SystemTime>) -> bool {
 pub fn remove_slot(slot_id: u8) -> Result<(), KenvError> {
     let _mutation_guard = MUTATION_LOCK.lock();
     // Save removed slot for rollback if persist fails.
-    let mut removed: Option<(usize, slots::UnlockSlot)> = None;
-    {
+    let removed: (usize, slots::UnlockSlot) = {
         let mut state = VAULT_STATE.write();
 
         // Require vault to be unlocked
@@ -600,19 +601,18 @@ pub fn remove_slot(slot_id: u8) -> Result<(), KenvError> {
             // Clone before removing so we can restore if persist fails.
             let slot_snapshot = payload.slots[slot_index].clone();
             payload.slots.remove(slot_index);
-            removed = Some((slot_index, slot_snapshot));
+            (slot_index, slot_snapshot)
         } else {
             return Err(KenvError::VaultLocked);
         }
-    }
+    };
     // Drop write lock before persisting. Roll back the in-memory change on failure so the
     // process state cannot permanently diverge from what is on disk.
     if let Err(e) = persist_vault_state() {
-        if let Some((idx, slot)) = removed {
-            let mut state = VAULT_STATE.write();
-            if let Some(ref mut payload) = state.payload {
-                payload.slots.insert(idx, slot);
-            }
+        let (idx, slot) = removed;
+        let mut state = VAULT_STATE.write();
+        if let Some(ref mut payload) = state.payload {
+            payload.slots.insert(idx, slot);
         }
         return Err(e);
     }

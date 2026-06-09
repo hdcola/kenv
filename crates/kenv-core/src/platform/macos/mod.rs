@@ -76,14 +76,14 @@ pub fn store_touchid_protected_secret(_secret: &[u8], _label: &str) -> Result<Ve
 /// Retrieve a secret from Keychain protected by Secure Enclave + Touch ID
 ///
 /// This requires Touch ID evaluation to unlock Keychain access.
-pub fn retrieve_touchid_protected_secret(keychain_ref: &[u8]) -> Result<Vec<u8>, KenvError> {
+pub fn retrieve_touchid_protected_secret(_keychain_ref: &[u8]) -> Result<Vec<u8>, KenvError> {
     // TODO: Implement with security_framework
     // For now, this is a stub
 
     #[cfg(test)]
     {
         // In tests, return the reference as-is (would be replaced with mock secret)
-        Ok(keychain_ref.to_vec())
+        Ok(_keychain_ref.to_vec())
     }
 
     #[cfg(not(test))]

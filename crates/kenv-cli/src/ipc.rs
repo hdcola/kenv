@@ -42,6 +42,7 @@ impl std::error::Error for IpcError {}
 impl IpcError {
     /// Returns true only for SocketUnavailable errors (safe to fallback to local operations).
     /// RequestFailed and ResponseFailed must NOT trigger fallback for non-idempotent operations.
+    #[allow(dead_code)]
     pub fn is_socket_unavailable(&self) -> bool {
         matches!(self, Self::SocketUnavailable(_))
     }
@@ -277,7 +278,9 @@ pub struct SlotInfo {
     pub slot_id: u8,
     pub slot_type: String,
     pub label: String,
+    #[allow(dead_code)]
     pub last_used: Option<i64>,
+    #[allow(dead_code)]
     pub disabled: bool,
 }
 

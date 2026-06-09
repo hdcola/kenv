@@ -2,7 +2,6 @@
 use crate::KenvError;
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
-use zeroize::Zeroizing;
 
 /// SSH private key stored in vault
 #[derive(Clone, Debug, Serialize, Deserialize)]
