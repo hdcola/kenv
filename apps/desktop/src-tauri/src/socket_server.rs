@@ -6,8 +6,8 @@ use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::sync::{
-    Arc,
     atomic::{AtomicUsize, Ordering},
+    Arc,
 };
 use std::thread;
 use std::time::Duration;
@@ -411,7 +411,9 @@ mod tests {
         );
 
         // Verify timeouts actually fire (use a short duration to keep the test fast)
-        server_side.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
+        server_side
+            .set_read_timeout(Some(Duration::from_millis(100)))
+            .unwrap();
         let start = std::time::Instant::now();
         let mut buf = [0u8; 1];
         let result = server_side.read(&mut buf);

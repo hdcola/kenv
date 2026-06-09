@@ -156,8 +156,7 @@ mod tests {
 
         // With expected_counter = a0.counter (unlock time — simulates second call after
         // register)
-        let a1 = get_assertion_with_hmac_secret(&device, &cred, &challenge, a0.counter)
-            .unwrap();
+        let a1 = get_assertion_with_hmac_secret(&device, &cred, &challenge, a0.counter).unwrap();
         assert!(
             a1.counter > a0.counter,
             "counter must exceed expected={}",

@@ -144,7 +144,10 @@ mod tests {
         let dek = [99u8; 32];
 
         let slot = register_and_wrap_dek(&device, &dek, "test_label").expect("register failed");
-        assert!(slot.counter > 0, "counter must be set from initial assertion");
+        assert!(
+            slot.counter > 0,
+            "counter must be set from initial assertion"
+        );
         assert_eq!(slot.algorithm, -7); // ES256
         assert!(!slot.encrypted_dek.is_empty());
     }
