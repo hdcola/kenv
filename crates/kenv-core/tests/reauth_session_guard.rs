@@ -1,6 +1,6 @@
 use kenv_core::{
-    advance_session_id_for_test, create_vault_at, crypto::KdfParams, get_session_id_for_test,
-    reauth_password, reauth_stamp_for_test, unlock, vault, KenvError,
+    advance_session_id_for_test, corrupt_dek_for_test, create_vault_at, crypto::KdfParams,
+    get_session_id_for_test, reauth_password, reauth_stamp_for_test, unlock, vault, KenvError,
 };
 use serial_test::serial;
 use tempfile::TempDir;
@@ -65,6 +65,29 @@ fn fresh_session_stamp_succeeds() {
 
     let current_id = get_session_id_for_test();
     reauth_stamp_for_test(current_id).expect("stamping with the current session_id must succeed");
+
+    teardown();
+}
+
+/// Regression: reauth must fail when the password slot decrypts successfully but the
+/// resulting bytes do not equal the current session DEK.
+/// Simulated by corrupting state.dek after unlock without touching the slot material.
+#[test]
+#[serial]
+fn reauth_fails_when_decrypted_dek_does_not_match_session_dek() {
+    let _dir = setup("password");
+    unlock("password").unwrap();
+
+    // Overwrite state.dek with a different value. The password slot still encrypts
+    // the original DEK, so crypto::decrypt succeeds — but the result must not match
+    // the (now-different) session DEK.
+    corrupt_dek_for_test([0xAB; 32]);
+
+    let err = reauth_password("password").unwrap_err();
+    assert!(
+        matches!(err, KenvError::UnlockFailed),
+        "reauth must return UnlockFailed when decrypted DEK != session DEK, got: {err:?}"
+    );
 
     teardown();
 }

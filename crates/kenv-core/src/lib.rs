@@ -764,8 +764,14 @@ pub fn reauth_password(password: &str) -> Result<(), KenvError> {
 
                     // Test decryption: if it succeeds, password is correct
                     match crypto::decrypt(&*key, &pwd_data.nonce, &ciphertext, &[]) {
-                        Ok(_) => {
-                            // Password verification succeeded; will set reauthentication flag below
+                        Ok(decrypted) => {
+                            let decrypted_dek: [u8; 32] = decrypted
+                                .try_into()
+                                .map_err(|_| KenvError::UnlockFailed)?;
+                            let session_dek = state.dek.ok_or(KenvError::VaultLocked)?;
+                            if decrypted_dek != session_dek {
+                                return Err(KenvError::UnlockFailed);
+                            }
                         }
                         Err(_) => return Err(KenvError::UnlockFailed),
                     }
@@ -952,6 +958,15 @@ pub fn reauth_stamp_for_test(snapshot_session_id: u64) -> Result<(), KenvError> 
     }
     state.reauthenticated_at = Some(SystemTime::now());
     Ok(())
+}
+
+/// Overwrite the active session DEK with an arbitrary value. **Test-only helper.**
+///
+/// Used to simulate an inconsistency between `state.dek` and the value wrapped inside
+/// a password slot, without needing to craft a valid mismatched AEAD ciphertext.
+#[doc(hidden)]
+pub fn corrupt_dek_for_test(new_dek: [u8; 32]) {
+    VAULT_STATE.write().dek = Some(new_dek);
 }
 
 /// Inject an SSH key into the unlocked vault payload. **Test-only helper.**
