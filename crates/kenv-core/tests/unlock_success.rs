@@ -1,4 +1,4 @@
-use kenv_core::{create_vault, get_vault_status, unlock, VaultStatus};
+use kenv_core::{unlock, VaultStatus};
 
 // These tests verify basic unlock() functionality.
 // Note: Testing with the global vault path is challenging due to parallel test execution.

@@ -1,7 +1,5 @@
 use kenv_core::{
-    get_vault_status, get_vault_status_with,
-    vault::FILE_VERSION_V2,
-    KenvError, VaultStatus,
+    get_vault_status, get_vault_status_with, vault::FILE_VERSION_V2, KenvError, VaultStatus,
 };
 use tempfile::TempDir;
 

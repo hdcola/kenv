@@ -1,4 +1,4 @@
-use kenv_core::{create_vault, lock};
+use kenv_core::lock;
 
 #[test]
 fn lock_succeeds_after_unlock() {

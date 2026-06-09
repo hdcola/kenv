@@ -1,5 +1,6 @@
 use kenv_core::crypto::KdfParams;
 use kenv_core::vault::{validate_vault_header, write_vault_file, FILE_VERSION_V2, MAGIC};
+#[cfg(not(unix))]
 use kenv_core::KenvError;
 use tempfile::NamedTempFile;
 
