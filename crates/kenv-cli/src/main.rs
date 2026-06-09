@@ -31,8 +31,6 @@ enum Commands {
     },
     /// List all SSH keys stored in vault.
     Keys,
-    /// Print migration instructions for vaults that use an unsupported older format.
-    Migrate,
 }
 
 fn main() {
@@ -46,7 +44,6 @@ fn main() {
         Commands::Slots => print_slots(),
         Commands::RemoveSlot { slot_id } => remove_unlock_slot(slot_id),
         Commands::Keys => print_ssh_keys(),
-        Commands::Migrate => migrate_vault(),
     };
 
     if let Err(error) = result {
@@ -231,21 +228,6 @@ fn print_ssh_keys() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("Error: {}", e);
             }
             Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)))
-        }
-    }
-}
-
-fn migrate_vault() -> Result<(), Box<dyn std::error::Error>> {
-    match get_vault_status()? {
-        VaultStatus::NeedsRecreation => {
-            println!("vault_status=needs_recreation");
-            eprintln!("error=vault format v1 is no longer supported");
-            eprintln!("Back up any stored credentials, then run: kenv create");
-            std::process::exit(1);
-        }
-        status => {
-            println!("vault_status={}", status.as_script_value());
-            Ok(())
         }
     }
 }

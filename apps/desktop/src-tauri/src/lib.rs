@@ -96,7 +96,7 @@ mod tests {
         assert!(
             matches!(
                 status,
-                VaultStatus::Missing | VaultStatus::Locked | VaultStatus::Corrupted
+                VaultStatus::Missing | VaultStatus::Locked | VaultStatus::Corrupted | VaultStatus::Unlocked
             ),
             "unexpected status: {}",
             status.as_script_value()

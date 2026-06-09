@@ -11,7 +11,6 @@ use zeroize::Zeroize;
 use std::os::unix::fs::OpenOptionsExt;
 
 pub const MAGIC: &[u8; 4] = b"KENV";
-pub const FILE_VERSION_V1: u8 = 1;
 pub const FILE_VERSION_V2: u8 = 2;
 
 pub const KDF_ID_ARGON2ID: u8 = 1;
@@ -576,9 +575,6 @@ pub fn validate_vault_header(data: &[u8]) -> Result<u8, KenvError> {
     }
 
     let version = data[4];
-    if version == FILE_VERSION_V1 {
-        return Err(KenvError::VaultVersionUnsupported(FILE_VERSION_V1));
-    }
     if version != FILE_VERSION_V2 {
         return Err(KenvError::InvalidVaultFormat);
     }

@@ -22,10 +22,7 @@ export const en = {
     unlocked: "Unlocked",
     unknown: "Unknown",
     corrupted: "Corrupted",
-    needs_recreation: "Needs Recreation",
     locked_description: "Encrypted. Full integrity verified on unlock.",
-    needs_recreation_description:
-      "Your vault was created with an older format that is no longer supported. Back up any stored credentials, then run: kenv create",
     copy:
       "The shared Rust core is connected. Vault creation is available today, and unlock plus credential workflows are the next MVP steps.",
   },

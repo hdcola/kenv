@@ -23,11 +23,3 @@ fn encryption_error_variant_displays() {
         "encryption or decryption failed"
     );
 }
-
-#[test]
-fn vault_version_unsupported_variant_displays() {
-    assert_eq!(
-        KenvError::VaultVersionUnsupported(1).to_string(),
-        "vault format version 1 is no longer supported; recreate the vault"
-    );
-}

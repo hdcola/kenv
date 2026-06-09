@@ -22,7 +22,6 @@ pub enum VaultStatus {
     Locked,
     Unlocked,
     Corrupted,
-    NeedsRecreation,
 }
 
 impl VaultStatus {
@@ -32,7 +31,6 @@ impl VaultStatus {
             Self::Locked => "locked",
             Self::Unlocked => "unlocked",
             Self::Corrupted => "corrupted",
-            Self::NeedsRecreation => "needs_recreation",
         }
     }
 }
@@ -142,8 +140,6 @@ pub enum KenvError {
     VaultAlreadyExists,
     #[error("vault file has an invalid format")]
     InvalidVaultFormat,
-    #[error("vault format version {0} is no longer supported; recreate the vault")]
-    VaultVersionUnsupported(u8),
     #[error("encryption or decryption failed")]
     EncryptionError,
     #[error("password must not be empty")]
@@ -460,7 +456,6 @@ pub fn get_vault_status() -> Result<VaultStatus, KenvError> {
         // without the decryption key; that check belongs in unlock(). A vault with
         // corrupted ciphertext will return Locked here and only fail at unlock time.
         Ok(_version) => Ok(VaultStatus::Locked),
-        Err(KenvError::VaultVersionUnsupported(_)) => Ok(VaultStatus::NeedsRecreation),
         Err(_) => Ok(VaultStatus::Corrupted),
     }
 }

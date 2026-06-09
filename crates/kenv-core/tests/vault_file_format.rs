@@ -1,5 +1,5 @@
 use kenv_core::crypto::KdfParams;
-use kenv_core::vault::{validate_vault_header, write_vault_file, FILE_VERSION_V1, FILE_VERSION_V2, MAGIC};
+use kenv_core::vault::{validate_vault_header, write_vault_file, FILE_VERSION_V2, MAGIC};
 use kenv_core::KenvError;
 use tempfile::NamedTempFile;
 
@@ -200,49 +200,6 @@ fn validate_rejects_v2_with_bad_kdf_id() {
     let mut b = std::fs::read(&path).unwrap();
     b[5] = 0xFF;
     assert!(validate_vault_header(&b).is_err());
-}
-
-#[test]
-fn validate_rejects_v1_with_version_unsupported_error() {
-    // Minimal V1-shaped blob: MAGIC + version=1 + kdf_id + non-zero KDF params +
-    // non-zero salt + non-zero nonce + placeholder ciphertext bytes.
-    let mut data = vec![0u8; 91];
-    data[0..4].copy_from_slice(b"KENV");
-    data[4] = FILE_VERSION_V1;
-    data[5] = 1; // KDF_ID_ARGON2ID
-    data[6..10].copy_from_slice(&65536u32.to_be_bytes()); // m_cost
-    data[10..14].copy_from_slice(&3u32.to_be_bytes()); // t_cost
-    data[14..18].copy_from_slice(&1u32.to_be_bytes()); // p_cost
-    data[18] = 1; // non-zero salt
-    data[50] = 1; // non-zero nonce
-    assert!(matches!(
-        validate_vault_header(&data),
-        Err(KenvError::VaultVersionUnsupported(1))
-    ));
-}
-
-#[test]
-fn v1_error_is_distinct_from_invalid_format() {
-    let mut corrupt = vec![0u8; 91];
-    corrupt[0..4].copy_from_slice(b"KENV");
-    corrupt[4] = 0xFF; // unknown future version
-    corrupt[18] = 1;
-    corrupt[50] = 1;
-
-    let mut v1 = vec![0u8; 91];
-    v1[0..4].copy_from_slice(b"KENV");
-    v1[4] = FILE_VERSION_V1;
-    v1[18] = 1;
-    v1[50] = 1;
-
-    assert!(matches!(
-        validate_vault_header(&corrupt),
-        Err(KenvError::InvalidVaultFormat)
-    ));
-    assert!(matches!(
-        validate_vault_header(&v1),
-        Err(KenvError::VaultVersionUnsupported(1))
-    ));
 }
 
 #[cfg(not(unix))]

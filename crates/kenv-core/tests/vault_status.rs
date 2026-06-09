@@ -1,6 +1,6 @@
 use kenv_core::{
     get_vault_status, get_vault_status_with,
-    vault::{FILE_VERSION_V1, FILE_VERSION_V2},
+    vault::FILE_VERSION_V2,
     KenvError, VaultStatus,
 };
 use tempfile::TempDir;
@@ -11,8 +11,7 @@ fn returns_missing_or_locked_depending_on_real_filesystem() {
     assert!(
         status == VaultStatus::Missing
             || status == VaultStatus::Locked
-            || status == VaultStatus::Corrupted
-            || status == VaultStatus::NeedsRecreation,
+            || status == VaultStatus::Corrupted,
         "unexpected status: {:?}",
         status
     );
@@ -162,33 +161,4 @@ fn returns_locked_when_header_valid_and_ciphertext_is_garbage() {
     .unwrap();
 
     assert_eq!(status, VaultStatus::Locked);
-}
-
-#[test]
-fn returns_needs_recreation_for_v1_vault() {
-    let dir = TempDir::new().unwrap();
-    let path = dir.path().join("vault.kenv");
-
-    let mut data = vec![0u8; 91];
-    data[0..4].copy_from_slice(b"KENV");
-    data[4] = FILE_VERSION_V1;
-    data[5] = 1; // kdf_id
-    data[6..10].copy_from_slice(&65536u32.to_be_bytes()); // m_cost
-    data[10..14].copy_from_slice(&3u32.to_be_bytes()); // t_cost
-    data[14..18].copy_from_slice(&1u32.to_be_bytes()); // p_cost
-    data[18] = 1; // non-zero salt
-    data[50] = 1; // non-zero nonce
-    std::fs::write(&path, &data).unwrap();
-
-    let status = get_vault_status_with(|| {
-        let data = std::fs::read(&path).map_err(|_| KenvError::FileOperationFailed)?;
-        match kenv_core::vault::validate_vault_header(&data) {
-            Ok(_version) => Ok(VaultStatus::Locked),
-            Err(KenvError::VaultVersionUnsupported(_)) => Ok(VaultStatus::NeedsRecreation),
-            Err(_) => Ok(VaultStatus::Corrupted),
-        }
-    })
-    .unwrap();
-
-    assert_eq!(status, VaultStatus::NeedsRecreation);
 }

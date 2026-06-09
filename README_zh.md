@@ -157,7 +157,7 @@ MVP 必须包含桌面端和 CLI 两个入口，但不会承诺完整替代 `ssh
 
 ```sh
 pnpm install
-cargo test --workspace
+cargo test --workspace --features kenv-core/test-utils
 ```
 
 当前平台支持：
