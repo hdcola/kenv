@@ -174,3 +174,53 @@ fn persist_uses_state_vault_path_not_global_vault_path() {
     lock().ok();
     vault::clear_test_vault_path();
 }
+
+#[test]
+#[serial]
+fn concurrent_add_password_slot_assigns_distinct_ids() {
+    vault::clear_test_vault_path();
+    lock().ok();
+
+    let dir = TempDir::new().unwrap();
+    let vault_path = Arc::new(dir.path().join("vault.kenv"));
+    create_vault_at(&*vault_path, "master", &KdfParams::for_tests()).unwrap();
+    vault::set_test_vault_path((*vault_path).clone());
+    unlock("master").expect("unlock");
+
+    // Two concurrent add_password_slot calls must both succeed and each produce a
+    // distinct slot_id. Before the fix, both may compute the same next_slot_id
+    // outside MUTATION_LOCK; one then fails with EncryptionError (duplicate ID).
+    let handles: Vec<_> = ["pw-a", "pw-b"]
+        .iter()
+        .map(|pw| {
+            let path = Arc::clone(&vault_path);
+            let pw = pw.to_string();
+            thread::spawn(move || {
+                vault::set_test_vault_path((*path).clone());
+                kenv_core::add_password_slot(&pw, &KdfParams::for_tests())
+            })
+        })
+        .collect();
+
+    let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+    for (i, r) in results.iter().enumerate() {
+        assert!(r.is_ok(), "thread {i} add_password_slot failed: {:?}", r);
+    }
+
+    // All three slots (original + 2 new) must exist with distinct IDs.
+    let slots = kenv_core::list_slots().expect("list_slots");
+    assert_eq!(slots.len(), 3, "expected 3 slots, got {}", slots.len());
+    let mut ids: Vec<u8> = slots.iter().map(|s| s.slot_id).collect();
+    ids.sort();
+    ids.dedup();
+    assert_eq!(ids.len(), 3, "slot IDs must all be distinct: {:?}", ids);
+
+    // Round-trip: both new slots survive a lock/unlock cycle.
+    lock().ok();
+    unlock("master").expect("re-unlock");
+    let on_disk = kenv_core::list_slots().expect("list_slots after round-trip");
+    assert_eq!(on_disk.len(), 3, "all 3 slots must persist to disk");
+
+    lock().ok();
+    vault::clear_test_vault_path();
+}

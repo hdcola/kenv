@@ -477,41 +477,29 @@ pub struct SlotInfo {
     pub disabled: bool,
 }
 
-/// Add a new unlock slot to the vault
-///
-/// Requires vault to be unlocked. Low-risk operation (no password reauthentication).
-/// Returns error if vault is locked or slot_id already exists.
-pub fn add_slot(slot: slots::UnlockSlot) -> Result<(), KenvError> {
-    let _mutation_guard = MUTATION_LOCK.lock();
+// Caller must already hold MUTATION_LOCK.
+fn add_slot_inner(slot: slots::UnlockSlot) -> Result<(), KenvError> {
     let new_slot_id = slot.slot_id;
     {
         let mut state = VAULT_STATE.write();
 
-        // Require vault to be unlocked
         if state.payload.is_none() {
             return Err(KenvError::VaultLocked);
         }
 
-        // Fail fast: reject slots where slot_type and key material are inconsistent.
-        // build_cleartext_slot_records silently drops such slots, which would leave the
-        // vault unable to reopen via this slot after the next lock/unlock cycle.
         if !slot.has_key_material() {
             return Err(KenvError::InvalidSlotData);
         }
 
-        // Add slot to payload
         if let Some(ref mut payload) = state.payload {
-            // Check slot_id is not already in use
             if payload.slots.iter().any(|s| s.slot_id == new_slot_id) {
-                return Err(KenvError::EncryptionError); // Reuse error for "slot already exists"
+                return Err(KenvError::EncryptionError);
             }
             payload.slots.push(slot);
         } else {
             return Err(KenvError::VaultLocked);
         }
     }
-    // Drop write lock before persisting. Roll back the in-memory change on failure so the
-    // process state cannot permanently diverge from what is on disk.
     if let Err(e) = persist_vault_state() {
         let mut state = VAULT_STATE.write();
         if let Some(ref mut payload) = state.payload {
@@ -520,6 +508,15 @@ pub fn add_slot(slot: slots::UnlockSlot) -> Result<(), KenvError> {
         return Err(e);
     }
     Ok(())
+}
+
+/// Add a new unlock slot to the vault
+///
+/// Requires vault to be unlocked. Low-risk operation (no password reauthentication).
+/// Returns error if vault is locked or slot_id already exists.
+pub fn add_slot(slot: slots::UnlockSlot) -> Result<(), KenvError> {
+    let _mutation_guard = MUTATION_LOCK.lock();
+    add_slot_inner(slot)
 }
 
 /// Whether a recorded reauthentication timestamp is still within the 5-minute window.
@@ -813,6 +810,11 @@ pub fn add_password_slot(password: &str, params: &KdfParams) -> Result<(), KenvE
         return Err(KenvError::WeakPassword);
     }
 
+    // Hold MUTATION_LOCK for the entire ID-read → wrap → add → persist sequence.
+    // Without this, two concurrent calls can both read the same max slot_id and
+    // compute the same next_slot_id, causing one call to fail with EncryptionError.
+    let _mutation_guard = MUTATION_LOCK.lock();
+
     // Read DEK and compute next slot_id under a short-lived read guard.
     // [u8; 32] is Copy, so we can safely move a copy out before dropping the guard.
     let (dek_raw, next_slot_id) = {
@@ -847,7 +849,7 @@ pub fn add_password_slot(password: &str, params: &KdfParams) -> Result<(), KenvE
         disabled: false,
     };
 
-    add_slot(slot)
+    add_slot_inner(slot)
 }
 
 /// List SSH keys with metadata (non-secret information)
