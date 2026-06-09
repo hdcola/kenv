@@ -338,7 +338,7 @@ fn handle_request(req: Request, app_handle: &tauri::AppHandle) -> Response {
 
 #[cfg(test)]
 mod tests {
-    use super::SocketGuard;
+    use super::{SocketGuard, IO_TIMEOUT};
     use std::path::PathBuf;
 
     #[test]
@@ -355,26 +355,30 @@ mod tests {
     #[test]
     fn accepted_socket_read_times_out() {
         use std::io::Read;
-        use std::os::unix::net::{UnixListener, UnixStream};
+        use std::os::unix::net::UnixListener;
         use std::time::Duration;
 
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("timeout_test.sock");
         let listener = UnixListener::bind(&path).unwrap();
 
-        // Connect a client that never writes
-        let _client = UnixStream::connect(&path).unwrap();
-        let (server_side, _) = listener.accept().unwrap();
+        let _client = std::os::unix::net::UnixStream::connect(&path).unwrap();
+        let (mut server_side, _) = listener.accept().unwrap();
 
-        // Use a short timeout for test speed; verify the API works
-        let test_timeout = Duration::from_millis(100);
-        server_side.set_read_timeout(Some(test_timeout)).unwrap();
+        // Verify the production constant is wired: set it and read it back
+        server_side.set_read_timeout(Some(IO_TIMEOUT)).unwrap();
+        assert_eq!(
+            server_side.read_timeout().unwrap(),
+            Some(IO_TIMEOUT),
+            "IO_TIMEOUT must be set correctly"
+        );
 
+        // Verify timeouts actually fire (use a short duration to keep the test fast)
+        server_side.set_read_timeout(Some(Duration::from_millis(100))).unwrap();
         let start = std::time::Instant::now();
         let mut buf = [0u8; 1];
-        let mut server_ref = &server_side;
-        let result = server_ref.read(&mut buf);
-        assert!(result.is_err(), "read should time out");
+        let result = server_side.read(&mut buf);
+        assert!(result.is_err(), "read should error on timeout");
         assert!(
             start.elapsed() < Duration::from_secs(2),
             "read_timeout was not respected: elapsed {:?}",
