@@ -765,11 +765,14 @@ pub fn reauth_password(password: &str) -> Result<(), KenvError> {
                     // Test decryption: if it succeeds, password is correct
                     match crypto::decrypt(&*key, &pwd_data.nonce, &ciphertext, &[]) {
                         Ok(decrypted) => {
-                            let decrypted_dek: [u8; 32] = decrypted
-                                .try_into()
-                                .map_err(|_| KenvError::UnlockFailed)?;
+                            use subtle::ConstantTimeEq;
+                            let decrypted = zeroize::Zeroizing::new(decrypted);
+                            let decrypted_dek = zeroize::Zeroizing::new(
+                                <[u8; 32]>::try_from(decrypted.as_slice())
+                                    .map_err(|_| KenvError::UnlockFailed)?,
+                            );
                             let session_dek = state.dek.ok_or(KenvError::VaultLocked)?;
-                            if decrypted_dek != session_dek {
+                            if decrypted_dek.ct_eq(&session_dek).unwrap_u8() == 0 {
                                 return Err(KenvError::UnlockFailed);
                             }
                         }

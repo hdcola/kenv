@@ -163,7 +163,10 @@ fn persist_uses_state_vault_path_not_global_vault_path() {
     unlock("password").expect("re-unlock from path_a");
     let slots = kenv_core::list_slots().expect("list_slots");
     assert_eq!(
-        slots.iter().find(|s| s.slot_id == 1).map(|s| s.label.as_str()),
+        slots
+            .iter()
+            .find(|s| s.slot_id == 1)
+            .map(|s| s.label.as_str()),
         Some("renamed"),
         "rename must be persisted to state.vault_path (path_a), not the redirected global path"
     );
