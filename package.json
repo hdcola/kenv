@@ -12,7 +12,7 @@
     "build:cli": "cargo build -p kenv-cli --release",
     "build:desktop": "pnpm --filter desktop tauri build",
     "build:frontend": "pnpm --filter desktop build",
-    "test": "cargo test --workspace && pnpm --filter desktop test",
+    "test": "cargo test --workspace --features kenv-core/test-utils && pnpm --filter desktop test",
     "lint": "cargo fmt --all -- --check"
   },
   "devDependencies": {

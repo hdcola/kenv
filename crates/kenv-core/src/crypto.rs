@@ -1,5 +1,5 @@
 use aes_gcm::{
-    aead::{Aead, KeyInit},
+    aead::{Aead, KeyInit, Payload},
     Aes256Gcm, Key, Nonce,
 };
 use argon2::{Algorithm, Argon2, Params, Version};
@@ -46,20 +46,34 @@ pub fn encrypt(
     key: &[u8; 32],
     nonce: &[u8; 12],
     plaintext: &[u8],
+    aad: &[u8],
 ) -> Result<Vec<u8>, aes_gcm::Error> {
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
     let nonce = Nonce::from_slice(nonce);
-    cipher.encrypt(nonce, plaintext)
+    cipher.encrypt(
+        nonce,
+        Payload {
+            msg: plaintext,
+            aad,
+        },
+    )
 }
 
 pub fn decrypt(
     key: &[u8; 32],
     nonce: &[u8; 12],
     ciphertext: &[u8],
+    aad: &[u8],
 ) -> Result<Vec<u8>, aes_gcm::Error> {
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
     let nonce = Nonce::from_slice(nonce);
-    cipher.decrypt(nonce, ciphertext)
+    cipher.decrypt(
+        nonce,
+        Payload {
+            msg: ciphertext,
+            aad,
+        },
+    )
 }
 
 #[cfg(test)]
@@ -103,7 +117,7 @@ mod tests {
         let key = [0u8; 32];
         let nonce = [0u8; 12];
         let plaintext = b"hello vault";
-        let ciphertext = encrypt(&key, &nonce, plaintext).unwrap();
+        let ciphertext = encrypt(&key, &nonce, plaintext, &[]).unwrap();
         assert_eq!(ciphertext.len(), plaintext.len() + 16);
     }
 
@@ -112,8 +126,8 @@ mod tests {
         let key = [5u8; 32];
         let nonce = [6u8; 12];
         let plaintext = b"round-trip test";
-        let ciphertext = encrypt(&key, &nonce, plaintext).unwrap();
-        let recovered = decrypt(&key, &nonce, &ciphertext).unwrap();
+        let ciphertext = encrypt(&key, &nonce, plaintext, &[]).unwrap();
+        let recovered = decrypt(&key, &nonce, &ciphertext, &[]).unwrap();
         assert_eq!(recovered, plaintext);
     }
 
@@ -122,9 +136,9 @@ mod tests {
         let key = [7u8; 32];
         let nonce = [8u8; 12];
         let plaintext = b"tamper test";
-        let mut ciphertext = encrypt(&key, &nonce, plaintext).unwrap();
+        let mut ciphertext = encrypt(&key, &nonce, plaintext, &[]).unwrap();
         ciphertext[0] ^= 0xFF;
-        assert!(decrypt(&key, &nonce, &ciphertext).is_err());
+        assert!(decrypt(&key, &nonce, &ciphertext, &[]).is_err());
     }
 
     #[test]
@@ -132,7 +146,18 @@ mod tests {
         let key1 = [9u8; 32];
         let key2 = [10u8; 32];
         let nonce = [11u8; 12];
-        let ciphertext = encrypt(&key1, &nonce, b"secret").unwrap();
-        assert!(decrypt(&key2, &nonce, &ciphertext).is_err());
+        let ciphertext = encrypt(&key1, &nonce, b"secret", &[]).unwrap();
+        assert!(decrypt(&key2, &nonce, &ciphertext, &[]).is_err());
+    }
+
+    #[test]
+    fn decrypt_rejects_mismatched_aad() {
+        let key = [12u8; 32];
+        let nonce = [13u8; 12];
+        let plaintext = b"aad test";
+        let aad = b"slot-section-bytes";
+        let ciphertext = encrypt(&key, &nonce, plaintext, aad).unwrap();
+        // Different AAD must cause authentication failure.
+        assert!(decrypt(&key, &nonce, &ciphertext, b"tampered-aad").is_err());
     }
 }

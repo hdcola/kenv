@@ -1,4 +1,6 @@
-use kenv_core::{get_vault_status, get_vault_status_with, KenvError, VaultStatus};
+use kenv_core::{
+    get_vault_status, get_vault_status_with, vault::FILE_VERSION_V2, KenvError, VaultStatus,
+};
 use tempfile::TempDir;
 
 #[test]
@@ -34,7 +36,7 @@ fn returns_corrupted_when_vault_file_has_invalid_content() {
     let status = get_vault_status_with(|| {
         let data = std::fs::read(&path).map_err(|_| KenvError::FileOperationFailed)?;
         match kenv_core::vault::validate_vault_header(&data) {
-            Ok(()) => Ok(VaultStatus::Locked),
+            Ok(_version) => Ok(VaultStatus::Locked),
             Err(_) => Ok(VaultStatus::Corrupted),
         }
     })
@@ -44,22 +46,24 @@ fn returns_corrupted_when_vault_file_has_invalid_content() {
 }
 
 #[test]
-fn returns_corrupted_when_header_valid_but_kdf_params_zero() {
+fn returns_corrupted_when_v2_salt_is_all_zeros() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("vault.kenv");
 
-    // Build a 91-byte file with valid header but zero KDF params
+    // Build a 91-byte V2 file where salt bytes are all zero (invalid).
+    // In V2, KDF params at bytes 6-17 are intentionally zero; the rejection
+    // here comes from the zero salt at bytes 18-50.
     let mut data = vec![0u8; 91];
     data[0..4].copy_from_slice(b"KENV");
-    data[4] = 1; // version
+    data[4] = FILE_VERSION_V2;
     data[5] = 1; // kdf_id
-                 // m_cost, t_cost, p_cost remain 0 (bytes 6-17) — structurally invalid
+                 // salt at bytes 18..50 remains all zeros — invalid
     std::fs::write(&path, &data).unwrap();
 
     let status = get_vault_status_with(|| {
         let data = std::fs::read(&path).map_err(|_| KenvError::FileOperationFailed)?;
         match kenv_core::vault::validate_vault_header(&data) {
-            Ok(()) => Ok(VaultStatus::Locked),
+            Ok(_version) => Ok(VaultStatus::Locked),
             Err(_) => Ok(VaultStatus::Corrupted),
         }
     })
@@ -75,20 +79,15 @@ fn returns_corrupted_when_salt_is_all_zeros() {
 
     let mut data = vec![0u8; 91];
     data[0..4].copy_from_slice(b"KENV");
-    data[4] = 1; // version
+    data[4] = FILE_VERSION_V2;
     data[5] = 1; // kdf_id
-    data[6..10].copy_from_slice(&1u32.to_be_bytes()); // m_cost = 1
-    data[10..14].copy_from_slice(&1u32.to_be_bytes()); // t_cost = 1
-    data[14..18].copy_from_slice(&1u32.to_be_bytes()); // p_cost = 1
-                                                       // salt at bytes 18..50 remains all zeros
-                                                       // nonce at bytes 50..62 remains all zeros
-                                                       // ciphertext at bytes 62..91 remains all zeros
+                 // salt at bytes 18..50 remains all zeros — invalid
     std::fs::write(&path, &data).unwrap();
 
     let status = get_vault_status_with(|| {
         let data = std::fs::read(&path).map_err(|_| KenvError::FileOperationFailed)?;
         match kenv_core::vault::validate_vault_header(&data) {
-            Ok(()) => Ok(VaultStatus::Locked),
+            Ok(_version) => Ok(VaultStatus::Locked),
             Err(_) => Ok(VaultStatus::Corrupted),
         }
     })
@@ -104,22 +103,19 @@ fn returns_corrupted_when_nonce_is_all_zeros() {
 
     let mut data = vec![0u8; 91];
     data[0..4].copy_from_slice(b"KENV");
-    data[4] = 1; // version
+    data[4] = FILE_VERSION_V2;
     data[5] = 1; // kdf_id
-    data[6..10].copy_from_slice(&1u32.to_be_bytes()); // m_cost = 1
-    data[10..14].copy_from_slice(&1u32.to_be_bytes()); // t_cost = 1
-    data[14..18].copy_from_slice(&1u32.to_be_bytes()); // p_cost = 1
-                                                       // salt at bytes 18..50 has valid random-looking data
+                 // salt at bytes 18..50 has valid random-looking data
     for i in 18..50 {
         data[i] = ((i as u32).wrapping_mul(0x9e3779b9)) as u8;
     }
-    // nonce at bytes 50..62 remains all zeros
+    // nonce at bytes 50..62 remains all zeros — invalid
     std::fs::write(&path, &data).unwrap();
 
     let status = get_vault_status_with(|| {
         let data = std::fs::read(&path).map_err(|_| KenvError::FileOperationFailed)?;
         match kenv_core::vault::validate_vault_header(&data) {
-            Ok(()) => Ok(VaultStatus::Locked),
+            Ok(_version) => Ok(VaultStatus::Locked),
             Err(_) => Ok(VaultStatus::Corrupted),
         }
     })
@@ -139,12 +135,10 @@ fn returns_locked_when_header_valid_and_ciphertext_is_garbage() {
 
     let mut data = vec![0u8; 91];
     data[0..4].copy_from_slice(b"KENV");
-    data[4] = 1; // version
+    data[4] = 2; // version = V2
     data[5] = 1; // kdf_id
-    data[6..10].copy_from_slice(&1u32.to_be_bytes()); // m_cost = 1
-    data[10..14].copy_from_slice(&1u32.to_be_bytes()); // t_cost = 1
-    data[14..18].copy_from_slice(&1u32.to_be_bytes()); // p_cost = 1
-                                                       // salt at bytes 18..50 has valid data
+                 // bytes 6..18: KDF params are zero in V2 (per-slot)
+                 // salt at bytes 18..50 has valid data
     for i in 18..50 {
         data[i] = ((i as u32).wrapping_mul(0x9e3779b9)) as u8;
     }
@@ -152,13 +146,13 @@ fn returns_locked_when_header_valid_and_ciphertext_is_garbage() {
     for i in 50..62 {
         data[i] = ((i as u32).wrapping_mul(0x9e3779b9)) as u8;
     }
-    // ciphertext at bytes 62..91 is garbage (all zeros or bitflipped)
+    // slot section + ciphertext at bytes 62..91 is garbage (all zeros)
     std::fs::write(&path, &data).unwrap();
 
     let status = get_vault_status_with(|| {
         let data = std::fs::read(&path).map_err(|_| KenvError::FileOperationFailed)?;
         match kenv_core::vault::validate_vault_header(&data) {
-            Ok(()) => Ok(VaultStatus::Locked),
+            Ok(_version) => Ok(VaultStatus::Locked),
             Err(_) => Ok(VaultStatus::Corrupted),
         }
     })

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useI18n } from "vue-i18n";
 import { persistLocale, SUPPORTED_LOCALES, type SupportedLocale } from "./i18n";
 import VaultCreateForm from "./VaultCreateForm.vue";
@@ -10,6 +11,7 @@ type VaultStatusView = VaultStatus | "unknown";
 
 const vaultStatus = ref<VaultStatusView>("unknown");
 const rawStatusError = ref("");
+let unlistenVaultState: UnlistenFn | null = null;
 
 const { locale, t } = useI18n();
 
@@ -36,11 +38,19 @@ async function refreshVaultStatus() {
   try {
     vaultStatus.value = await invoke<VaultStatus>("get_vault_status");
   } catch (error) {
+    vaultStatus.value = "unknown";
     rawStatusError.value = error instanceof Error ? error.message : String(error);
   }
 }
 
-onMounted(refreshVaultStatus);
+onMounted(async () => {
+  await refreshVaultStatus();
+  unlistenVaultState = await listen("vault-state-changed", () => refreshVaultStatus());
+});
+
+onUnmounted(() => {
+  unlistenVaultState?.();
+});
 </script>
 
 <template>
@@ -350,6 +360,7 @@ onMounted(refreshVaultStatus);
   color: #b85c0f;
   background: #fed7a8;
 }
+
 
 .error-text {
   color: #9b2d20;

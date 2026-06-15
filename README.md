@@ -2,7 +2,7 @@
 
 `kenv` is a context-aware environment security manager for developers. Its goal is to manage environment variables and SSH keys together in a local encrypted vault, making credential switching across projects, terminals, and tools safer and smoother.
 
-This project is currently in an early MVP stage. The repository now includes the product direction, MVP scope, architecture plan, a shared Rust core, a script-friendly CLI, and a Tauri + Vue desktop app with local encrypted vault creation. Vault unlock, credential management, and broader workflows are still in progress.
+This project is currently in an early MVP stage. The repository now includes the product direction, MVP scope, architecture plan, a shared Rust core, a script-friendly CLI, and a Tauri + Vue desktop app with local encrypted vault creation, status reporting, and basic vault lock/unlock flows. Credential management and broader workflows are still in progress.
 
 Chinese documentation is available in [README_zh.md](README_zh.md).
 
@@ -55,8 +55,8 @@ The checklist below tracks implemented repository status today, not just the int
 - [x] Vault status can be reported as `missing`
 - [x] Local encrypted vault file format is implemented
 - [x] Vault creation flow is implemented
-- [ ] Vault unlock flow is implemented
-- [ ] Vault lock flow is implemented
+- [x] Vault unlock flow is implemented
+- [x] Vault lock flow is implemented
 
 ### Contexts And Environment Variables
 
@@ -69,6 +69,9 @@ The checklist below tracks implemented repository status today, not just the int
 ### CLI Workflow
 
 - [x] `kenv status` prints a script-friendly vault status
+- [x] `kenv create`, `kenv unlock`, and `kenv lock` are implemented
+- [x] `kenv slots`, `kenv keys`, and `kenv remove-slot` are implemented
+- [ ] `kenv sign` is implemented (CLI subcommand not yet added; core returns `SshSigningNotImplemented`)
 - [ ] Context listing command is implemented
 - [ ] Context activation command is implemented
 - [ ] Shell-consumable env export output is implemented
@@ -77,7 +80,7 @@ The checklist below tracks implemented repository status today, not just the int
 
 - [ ] SSH key material records are implemented
 - [ ] SSH key reference records are implemented
-- [ ] SSH key list/status commands are implemented
+- [x] SSH key list/status commands are implemented
 - [ ] Local unlock flow for SSH-related usage is implemented
 
 ### Desktop App
@@ -156,7 +159,8 @@ Install dependencies and run the current verification suite:
 
 ```sh
 pnpm install
-cargo test --workspace
+cargo test --workspace                                         # fast check; skips feature-gated integration tests
+cargo test --workspace --features kenv-core/test-utils        # full suite including fault-injection tests
 ```
 
 Current platform support:
@@ -172,7 +176,12 @@ pnpm dev:desktop
 pnpm build:frontend
 pnpm test
 pnpm lint
+cargo run -p kenv-cli -- create
 cargo run -p kenv-cli -- status
+cargo run -p kenv-cli -- unlock
+cargo run -p kenv-cli -- lock
+cargo run -p kenv-cli -- slots
+cargo run -p kenv-cli -- keys
 ```
 
 Today the app reports real vault status, including the initial `vault_status=missing` state before a vault is created. Do not commit `.env` files or plaintext credential fixtures.

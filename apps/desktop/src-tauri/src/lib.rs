@@ -1,9 +1,17 @@
-use kenv_core::VaultStatus;
+mod handlers;
+mod socket_server;
+
+use kenv_core::{SlotInfo, SshKeyInfo, VaultStatus};
 use zeroize::Zeroize;
 
 #[tauri::command]
 fn get_vault_status() -> Result<VaultStatus, String> {
     kenv_core::get_vault_status().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn get_vault_slots() -> Result<Vec<SlotInfo>, String> {
+    kenv_core::list_slots().map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -13,10 +21,59 @@ fn create_vault(mut password: String) -> Result<(), String> {
     result
 }
 
+#[tauri::command]
+fn unlock(mut password: String) -> Result<VaultStatus, String> {
+    let result = kenv_core::unlock(&password).map_err(|e| e.to_string());
+    password.zeroize();
+    result
+}
+
+#[tauri::command]
+fn lock() -> Result<(), String> {
+    kenv_core::lock().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn remove_vault_slot(slot_id: u8) -> Result<bool, String> {
+    match kenv_core::remove_slot(slot_id) {
+        Ok(()) => Ok(true),
+        Err(kenv_core::KenvError::UnlockFailed) => {
+            // HIGH-RISK operation detected, return indicator that reauthentication is needed
+            Err("reauthentication_required".to_string())
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+fn reauthenticate(mut password: String) -> Result<(), String> {
+    let result = kenv_core::reauth_password(&password).map_err(|e| e.to_string());
+    password.zeroize();
+    result
+}
+
+#[tauri::command]
+fn get_ssh_keys() -> Result<Vec<SshKeyInfo>, String> {
+    kenv_core::list_ssh_keys().map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_vault_status, create_vault])
+        .setup(|app| {
+            socket_server::start_socket_server(app.handle().clone());
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            get_vault_status,
+            get_vault_slots,
+            create_vault,
+            unlock,
+            lock,
+            remove_vault_slot,
+            reauthenticate,
+            get_ssh_keys
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -39,7 +96,10 @@ mod tests {
         assert!(
             matches!(
                 status,
-                VaultStatus::Missing | VaultStatus::Locked | VaultStatus::Corrupted
+                VaultStatus::Missing
+                    | VaultStatus::Locked
+                    | VaultStatus::Corrupted
+                    | VaultStatus::Unlocked
             ),
             "unexpected status: {}",
             status.as_script_value()
